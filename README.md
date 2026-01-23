@@ -5,9 +5,11 @@ A beautiful, informative statusline for [Claude Code](https://claude.com/code) w
 ## Features
 
 ✨ **Visual Progress Bars** - Color-coded ASCII bars that change from green → orange → red as limits approach
-🎨 **Smart Color Coding** - Green (0-79%), Orange (80-89%), Red (90-100%)
+🎨 **Colored File Badges** - File status with colored backgrounds: 🟢[A#] 🟠[M#] 🔴[D#]
+💚 **Bold Line Changes** - Line additions in bold green (+NN), deletions in bold red (-NN)
+🎯 **Smart Color Coding** - Green (0-79%), Orange (80-89%), Red (90-100%)
 📊 **Context Window Tracking** - Real-time visualization of your context usage
-🔄 **Git Integration** - Shows branch, remote, file status (M/A/D), and line changes
+🔄 **Git Integration** - Shows branch, remote, file status badges, and line changes
 🔀 **Pull Request Info** - Displays PR number and title (via `gh` CLI)
 📈 **Usage Statistics** - Daily and weekly message count tracking
 ⚡ **Fast & Lightweight** - Pure Python, no external dependencies
@@ -15,17 +17,19 @@ A beautiful, informative statusline for [Claude Code](https://claude.com/code) w
 ## Preview
 
 ```bash
-# Normal usage (green):
-origin/main M2/A1 +45 -12 | ctx:███░░░░░ | Sonnet 4.5@█░░░░░░░/███░░░░░
+# Normal usage (green progress bars, colored badges):
+origin/main [A3] [M1] +45 -12 | ctx:███░░░░░ | Sonnet 4.5@█░░░░░░░/███░░░░░
+# [A3] = green background, [M1] = orange background
+# +45 = bold green, -12 = bold red
 
 # With Pull Request:
-origin/feature | PR#123: Add authentication | ctx:█████░░░ | Opus@██░░░░░░/████░░░░
+origin/feature [M2] | PR#123: Add authentication | ctx:█████░░░ | Opus@██░░░░░░/████░░░░
 
 # Warning level (orange bars at 80%):
-ctx:██████░░ | Sonnet@██████░░/███████░
+origin/hotfix [A5] [D1] +102 -87 | ctx:██████░░ | Sonnet@██████░░/███████░
 
 # Critical level (red bars at 90%+):
-ctx:███████░ | Sonnet@███████░/████████
+origin/bugfix [M3] [D2] +23 -45 | ctx:███████░ | Sonnet@███████░/████████
 ```
 
 ## Components
