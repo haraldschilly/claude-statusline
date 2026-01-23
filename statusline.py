@@ -91,11 +91,11 @@ def get_git_info(cwd):
 
     status_parts = []
     if added:
-        status_parts.append(f"{GREEN_BG}[A{added}]{RESET}")
+        status_parts.append(f"{GREEN_BG}A{added}{RESET}")
     if modified:
-        status_parts.append(f"{ORANGE_BG}[M{modified}]{RESET}")
+        status_parts.append(f"{ORANGE_BG}M{modified}{RESET}")
     if deleted:
-        status_parts.append(f"{RED_BG}[D{deleted}]{RESET}")
+        status_parts.append(f"{RED_BG}D{deleted}{RESET}")
 
     status_str = " ".join(status_parts) if status_parts else ""
 

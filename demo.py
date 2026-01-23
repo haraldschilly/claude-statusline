@@ -40,7 +40,7 @@ def demo():
     examples = [
         {
             "title": "Normal Usage (Green)",
-            "git": f"origin/main {GREEN_BG}[A1]{RESET} {ORANGE_BG}[M2]{RESET} {BOLD_GREEN}+45{RESET} {BOLD_RED}-12{RESET}",
+            "git": f"origin/main {GREEN_BG}A1{RESET} {ORANGE_BG}M2{RESET} {BOLD_GREEN}+45{RESET} {BOLD_RED}-12{RESET}",
             "ctx": 30,
             "daily": 15,
             "weekly": 38,
@@ -48,7 +48,7 @@ def demo():
         },
         {
             "title": "With Pull Request",
-            "git": f"origin/feature-auth {ORANGE_BG}[M3]{RESET}",
+            "git": f"origin/feature-auth {ORANGE_BG}M3{RESET}",
             "pr": "PR#123: Add user authentication",
             "ctx": 62,
             "daily": 25,
@@ -57,7 +57,7 @@ def demo():
         },
         {
             "title": "High Usage - Warning (Orange)",
-            "git": f"origin/main {GREEN_BG}[A5]{RESET} {BOLD_GREEN}+87{RESET}",
+            "git": f"origin/main {GREEN_BG}A5{RESET} {BOLD_GREEN}+87{RESET}",
             "ctx": 82,
             "daily": 85,
             "weekly": 88,
@@ -65,7 +65,7 @@ def demo():
         },
         {
             "title": "Critical Usage (Red)",
-            "git": f"origin/hotfix {ORANGE_BG}[M2]{RESET} {RED_BG}[D1]{RESET} {BOLD_GREEN}+23{RESET} {BOLD_RED}-45{RESET}",
+            "git": f"origin/hotfix {ORANGE_BG}M2{RESET} {RED_BG}D1{RESET} {BOLD_GREEN}+23{RESET} {BOLD_RED}-45{RESET}",
             "ctx": 95,
             "daily": 93,
             "weekly": 96,
@@ -114,16 +114,16 @@ def demo():
     print(f"  {RED}███████░{RESET} Red    (90-100%) - Critical usage")
     print()
     print(f"{BOLD}File Status Badges:{RESET}")
-    print(f"  {GREEN_BG}[A#]{RESET} Added files (green background)")
-    print(f"  {ORANGE_BG}[M#]{RESET} Modified files (orange background)")
-    print(f"  {RED_BG}[D#]{RESET} Deleted files (red background)")
+    print(f"  {GREEN_BG}A#{RESET} Added files (green background)")
+    print(f"  {ORANGE_BG}M#{RESET} Modified files (orange background)")
+    print(f"  {RED_BG}D#{RESET} Deleted files (red background)")
     print()
     print(f"{BOLD}Line Changes:{RESET}")
     print(f"  {BOLD_GREEN}+NN{RESET} Lines added (bold green)")
     print(f"  {BOLD_RED}-NN{RESET} Lines removed (bold red)")
     print()
     print(f"{BOLD}Components:{RESET}")
-    print(f"  • Git: remote/branch [A#] [M#] [D#] +lines -lines")
+    print(f"  • Git: remote/branch A# M# D# +lines -lines")
     print(f"  • PR: PR#number: title")
     print(f"  • Context: ctx:[progress bar]")
     print(f"  • Usage: ModelName@[daily]/[weekly]")

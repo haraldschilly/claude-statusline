@@ -31,9 +31,9 @@
    - Color coding: Green → Orange (80%) → Red (90%)
 
 2. **Colored File Status Badges**
-   - `[A#]` - Added (green background)
-   - `[M#]` - Modified (orange background)
-   - `[D#]` - Deleted (red background)
+   - `A#` - Added (green background)
+   - `M#` - Modified (orange background)
+   - `D#` - Deleted (red background)
 
 3. **Bold Colored Line Changes**
    - `+NN` - Bold green for additions
@@ -106,12 +106,12 @@ claude-statusline/
 
 Normal usage:
 ```
-origin/main [A3] [M1] +45 -12 | ctx:███░░░░░ | Sonnet 4.5@█░░░░░░░/███░░░░░
+origin/main A3 M1 +45 -12 | ctx:███░░░░░ | Sonnet 4.5@█░░░░░░░/███░░░░░
 ```
 
 With PR:
 ```
-origin/feature [M2] | PR#123: Add auth | ctx:█████░░░ | Opus@██░░░░░░/████░░░░
+origin/feature M2 | PR#123: Add auth | ctx:█████░░░ | Opus@██░░░░░░/████░░░░
 ```
 
 Warning (orange):

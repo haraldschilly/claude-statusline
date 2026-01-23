@@ -35,9 +35,9 @@ ln -sf ~/p/claude-statusline/statusline.py ~/.claude/statusline.py
 - 🔴 Red: 90-100% (critical)
 
 **File Status Badges**
-- `[A#]` - Added files (green background)
-- `[M#]` - Modified files (orange background)
-- `[D#]` - Deleted files (red background)
+- `A#` - Added files (green background)
+- `M#` - Modified files (orange background)
+- `D#` - Deleted files (red background)
 
 **Line Changes**
 - `+NN` - Lines added (bold green)
@@ -46,7 +46,7 @@ ln -sf ~/p/claude-statusline/statusline.py ~/.claude/statusline.py
 ### Example Output
 
 ```
-origin/main [A3] [M1] [D2] +45 -12 | PR#123: Add auth | ctx:███░░░░░ | Sonnet@█░░░░░░░/███░░░░░
+origin/main A3 M1 D2 +45 -12 | PR#123: Add auth | ctx:███░░░░░ | Sonnet@█░░░░░░░/███░░░░░
 ```
 
 ## Customization

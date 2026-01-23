@@ -5,7 +5,7 @@ A beautiful, informative statusline for [Claude Code](https://claude.com/code) w
 ## Features
 
 ✨ **Visual Progress Bars** - Color-coded ASCII bars that change from green → orange → red as limits approach
-🎨 **Colored File Badges** - File status with colored backgrounds: 🟢[A#] 🟠[M#] 🔴[D#]
+🎨 **Colored File Badges** - File status with colored backgrounds: 🟢 A# 🟠 M# 🔴 D#
 💚 **Bold Line Changes** - Line additions in bold green (+NN), deletions in bold red (-NN)
 🎯 **Smart Color Coding** - Green (0-79%), Orange (80-89%), Red (90-100%)
 📊 **Context Window Tracking** - Real-time visualization of your context usage
@@ -18,34 +18,34 @@ A beautiful, informative statusline for [Claude Code](https://claude.com/code) w
 
 ```bash
 # Normal usage (green progress bars, colored badges):
-origin/main [A3] [M1] +45 -12 | ctx:███░░░░░ | Sonnet 4.5@█░░░░░░░/███░░░░░
-# [A3] = green background, [M1] = orange background
+origin/main A3 M1 +45 -12 | ctx:███░░░░░ | Sonnet 4.5@█░░░░░░░/███░░░░░
+# A3 = green background, M1 = orange background
 # +45 = bold green, -12 = bold red
 
 # With Pull Request:
-origin/feature [M2] | PR#123: Add authentication | ctx:█████░░░ | Opus@██░░░░░░/████░░░░
+origin/feature M2 | PR#123: Add authentication | ctx:█████░░░ | Opus@██░░░░░░/████░░░░
 
 # Warning level (orange bars at 80%):
-origin/hotfix [A5] [D1] +102 -87 | ctx:██████░░ | Sonnet@██████░░/███████░
+origin/hotfix A5 D1 +102 -87 | ctx:██████░░ | Sonnet@██████░░/███████░
 
 # Critical level (red bars at 90%+):
-origin/bugfix [M3] [D2] +23 -45 | ctx:███████░ | Sonnet@███████░/████████
+origin/bugfix M3 D2 +23 -45 | ctx:███████░ | Sonnet@███████░/████████
 ```
 
 ## Components
 
 | Component | Description | Example |
 |-----------|-------------|---------|
-| **Git Info** | Remote/branch, colored file status badges, line changes | `origin/main [A3] [M1] +45 -12` |
+| **Git Info** | Remote/branch, colored file status badges, line changes | `origin/main A3 M1 +45 -12` |
 | **PR Status** | Pull request number and title (requires `gh` CLI) | `PR#123: Add new feature` |
 | **Context** | Current session context window usage with visual bar | `ctx:███░░░░░` |
 | **Model Usage** | Model name with daily/weekly usage bars | `Sonnet 4.5@█░░░░░░░/███░░░░░` |
 
 ### File Status Badge Colors
 
-- 🟢 **[A#]** - Added files (green background)
-- 🟠 **[M#]** - Modified files (orange background)
-- 🔴 **[D#]** - Deleted files (red background)
+- 🟢 **A#** - Added files (green background)
+- 🟠 **M#** - Modified files (orange background)
+- 🔴 **D#** - Deleted files (red background)
 
 ## Installation
 
