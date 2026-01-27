@@ -4,17 +4,17 @@ A beautiful, informative statusline for [Claude Code](https://claude.com/code) w
 
 ## Features
 
-🔋 **Real Token Usage Tracking** - Analyzes actual token consumption from Claude's `.jsonl` files
-💰 **Cost Estimation** - Shows estimated API costs based on your token usage
-📊 **Visual Progress Bars** - Color-coded ASCII bars that change from green → orange → red as limits approach
-⏱️ **Session Countdown Timer** - Shows time remaining until your 5-hour session resets
-📈 **Smart P90 Limits** - Automatically calculates personalized usage limits from your history (90th percentile)
-🎨 **Colored File Badges** - File status with colored backgrounds: 🟢 A# 🟠 M# 🔴 D#
-💚 **Bold Line Changes** - Line additions in bold green (+NN), deletions in bold red (-NN)
-🎯 **Smart Color Coding** - Green (<80%), Orange (80-89%), Red (≥90%)
-🔄 **Git Integration** - Shows branch, remote, file status badges, and line changes
-🔀 **Pull Request Info** - Displays PR number and title (via `gh` CLI)
-⚡ **Fast & Lightweight** - Pure Python, no external dependencies
+- 🔋 **Real Token Usage Tracking** - Analyzes actual token consumption from Claude's `.jsonl` files
+- 💰 **Cost Estimation** - Shows estimated API costs based on your token usage
+- 📊 **Visual Progress Bars** - Color-coded ASCII bars that change from green → orange → red as limits approach
+- ⏱️ **Session Countdown Timer** - Shows time remaining until your 5-hour session resets
+- 📈 **Smart P90 Limits** - Automatically calculates personalized usage limits from your history (90th percentile)
+- 🎨 **Colored File Badges** - File status with colored backgrounds: 🟢 A# 🟠 M# 🔴 D#
+- 💚 **Bold Line Changes** - Line additions in bold green (+NN), deletions in bold red (-NN)
+- 🎯 **Smart Color Coding** - Green (<80%), Orange (80-89%), Red (≥90%)
+- 🔄 **Git Integration** - Shows branch, remote, file status badges, and line changes
+- 🔀 **Pull Request Info** - Displays PR number and title (via `gh` CLI)
+- ⚡ **Fast & Lightweight** - Pure Python, no external dependencies
 
 ## Preview
 
