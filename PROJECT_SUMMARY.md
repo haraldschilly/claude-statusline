@@ -24,34 +24,50 @@
 
 ## ✨ Features
 
-### Visual Enhancements
-1. **Progress Bars** (8 chars wide)
-   - Context usage: `ctx:███░░░░░`
-   - Daily/weekly: `Model@█░░░░░░░/███░░░░░`
-   - Color coding: Green → Orange (80%) → Red (90%)
+### Core Features
+1. **Real Token Usage Tracking**
+   - Analyzes actual token consumption from `~/.claude/projects/*.jsonl`
+   - Shows used/limit: `🔋843.4k/4.2M`
+   - Progress bars with color coding
 
-2. **Colored File Status Badges**
+2. **Cost Estimation**
+   - Calculates API costs from token usage
+   - Based on Claude API pricing
+   - Shows current/limit: `💰$3.19/$18.58`
+
+3. **Smart P90 Limits**
+   - Automatically calculates personalized limits
+   - Uses 90th percentile from last 8 days
+   - Adapts to your usage patterns
+
+4. **Session Countdown Timer**
+   - Shows time until 5-hour session reset
+   - Format: `⏱️ 0h46m`
+   - Calculated from session start time
+
+5. **Progress Bars** (8 chars wide)
+   - Context usage: `🧠███░░░░░`
+   - Token usage: `🔋...k/...M ███░░░░░`
+   - Cost usage: `💰$.../$... ███░░░░░`
+   - Color coding: Green (<80%) → Orange (80-89%) → Red (≥90%)
+
+6. **Colored File Status Badges**
    - `A#` - Added (green background)
    - `M#` - Modified (orange background)
    - `D#` - Deleted (red background)
 
-3. **Bold Colored Line Changes**
+7. **Bold Colored Line Changes**
    - `+NN` - Bold green for additions
    - `-NN` - Bold red for deletions
 
-4. **Git Integration**
+8. **Git Integration**
    - Remote/branch info
    - File status with badges
    - Line change statistics
 
-5. **Pull Request Info**
+9. **Pull Request Info**
    - Via gh CLI
    - Shows PR# and title
-
-6. **Usage Tracking**
-   - Daily/weekly message counts
-   - Percentage-based bars
-   - Customizable limits
 
 ## 🔧 Installation Status
 
@@ -106,22 +122,22 @@ claude-statusline/
 
 Normal usage:
 ```
-origin/main A3 M1 +45 -12 | ctx:███░░░░░ | Sonnet 4.5@█░░░░░░░/███░░░░░
+origin/main A3 M1 +45 -12 | 🧠███░░░░░ | 🔋843.4k/4.2M █░░░░░░░ | 💰$3.19/$18.58 █░░░░░░░ | ⏱️ 0h46m | 🤖Sonnet 4.5
 ```
 
 With PR:
 ```
-origin/feature M2 | PR#123: Add auth | ctx:█████░░░ | Opus@██░░░░░░/████░░░░
+origin/feature M2 | PR#123: Add auth | 🧠█████░░░ | 🔋1.2M/4.2M ███░░░░░ | 💰$8.45/$18.58 ████░░░░ | ⏱️ 2h15m | 🤖Opus
 ```
 
-Warning (orange):
+Warning (orange at 80%+):
 ```
-ctx:██████░░ | Sonnet@██████░░/███████░
+🧠██████░░ | 🔋3.5M/4.2M ██████░░ | 💰$15.20/$18.58 ██████░░ | ⏱️ 1h30m | 🤖Sonnet
 ```
 
-Critical (red):
+Critical (red at 90%+):
 ```
-ctx:███████░ | Sonnet@███████░/████████
+🧠███████░ | 🔋3.9M/4.2M ███████░ | 💰$17.10/$18.58 ███████░ | ⏱️ 0h22m | 🤖Sonnet
 ```
 
 ## 🔗 Quick Links

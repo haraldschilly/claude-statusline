@@ -27,12 +27,18 @@ ln -sf ~/p/claude-statusline/statusline.py ~/.claude/statusline.py
 
 ## What You Get
 
-### Visual Elements
+### Core Features
+
+**Real Token & Cost Tracking**
+- 🔋 Token usage with limits: `🔋843.4k/4.2M █░░░░░░░`
+- 💰 Cost estimation: `💰$3.19/$18.58 █░░░░░░░`
+- ⏱️ Session countdown: `⏱️ 0h46m` until reset
+- 📊 Smart P90 limits (adapts to your usage)
 
 **Progress Bars** (8 chars wide)
-- 🟢 Green: 0-79% (normal)
+- 🟢 Green: <80% (normal)
 - 🟠 Orange: 80-89% (warning)
-- 🔴 Red: 90-100% (critical)
+- 🔴 Red: ≥90% (critical)
 
 **File Status Badges**
 - `A#` - Added files (green background)
@@ -46,31 +52,36 @@ ln -sf ~/p/claude-statusline/statusline.py ~/.claude/statusline.py
 ### Example Output
 
 ```
-origin/main A3 M1 D2 +45 -12 | PR#123: Add auth | ctx:███░░░░░ | Sonnet@█░░░░░░░/███░░░░░
+origin/main A3 M1 D2 +45 -12 | 🧠███░░░░░ | 🔋843.4k/4.2M █░░░░░░░ | 💰$3.19/$18.58 █░░░░░░░ | ⏱️ 0h46m | 🤖Sonnet 4.5
 ```
 
 ## Customization
 
-### Change Usage Limits
-Edit `statusline.py` lines 212-213:
-```python
-daily_limit = 2000
-weekly_limit = 10000
-```
+### Usage Limits (Automatic)
+Limits are **automatically calculated** from your usage history (P90 method):
+- Analyzes last 8 days of sessions
+- Uses 90th percentile as threshold
+- Falls back to sensible defaults (19k-220k tokens, $18-$140)
 
 ### Change Progress Bar Width
-Edit lines 251, 259-260:
+In `main()` function, find `width=8`:
 ```python
-progress_bar(context_used, width=10)  # Change 8 to 10
+token_bar = progress_bar(token_pct, width=10)  # Change 8 to 10
 ```
 
 ### Change Color Thresholds
-Edit lines 154-160:
+In `progress_bar()` function:
 ```python
 if percentage >= 90:  # Red at 90%
     color = RED
 elif percentage >= 80:  # Orange at 80%
     color = ORANGE
+```
+
+### Adjust Session Window
+In `analyze_usage_data()` function:
+```python
+cutoff_time = datetime.now(timezone.utc) - timedelta(hours=3)  # Change from 5
 ```
 
 ## Testing

@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
 """
 Custom statusline for Claude Code
-Shows: [git info] | [PR info] | [context usage] | [model@usage limits]
+Shows: [git info] | [PR info] | [🧠 context] | [🔋 tokens] | [💰 cost] | [⏱️ timer] | [🤖 model]
+
+Features:
+- Real token usage tracking from .jsonl files
+- Estimated API costs based on token consumption
+- Adaptive P90 limits from usage history
+- 5-hour session countdown timer
+- Colored progress bars and git status badges
 
 Repository: https://github.com/haraldschilly/claude-statusline
+Inspired by: https://github.com/leeguooooo/claude-code-usage-bar
 """
 
 import json
 import subprocess
 import sys
-from datetime import datetime, timedelta
+import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional, Dict, Any, List
 
 
 def run_cmd(cmd, cwd=None, check=False):
@@ -83,10 +93,10 @@ def get_git_info(cwd):
                     pass
 
     # Build status string with colored badges
-    # ANSI color codes for backgrounds
-    GREEN_BG = '\033[42m\033[30m'  # Green background, black text
-    ORANGE_BG = '\033[48;5;208m\033[30m'  # Orange background, black text
-    RED_BG = '\033[41m\033[30m'  # Red background, black text
+    # ANSI color codes for backgrounds with bold white text
+    GREEN_BG = '\033[42m\033[1;97m'  # Green background, bold white text
+    ORANGE_BG = '\033[48;5;208m\033[1;97m'  # Orange background, bold white text
+    RED_BG = '\033[41m\033[1;97m'  # Red background, bold white text
     RESET = '\033[0m'
 
     status_parts = []
@@ -181,55 +191,215 @@ def progress_bar(percentage, width=8):
     return f"{color}{bar}{RESET}"
 
 
-def get_usage_stats():
-    """Get daily and weekly message counts as percentages of typical usage."""
+def get_claude_data_path() -> Optional[Path]:
+    """Find Claude data directory."""
+    # Check env override
+    env_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if env_dir:
+        env_path = Path(env_dir).expanduser()
+        if env_path.name == ".claude":
+            if (env_path / "projects").exists():
+                return env_path / "projects"
+            return env_path
+        else:
+            if (env_path / ".claude" / "projects").exists():
+                return env_path / ".claude" / "projects"
+            return env_path / ".claude"
+
+    # Check standard locations
+    candidates = [
+        Path.home() / '.claude' / 'projects',
+        Path.home() / '.config' / 'claude' / 'projects',
+        Path.home() / '.claude',
+    ]
+
+    for path in candidates:
+        if path.exists() and path.is_dir():
+            return path
+
+    return None
+
+
+def analyze_usage_data() -> Optional[Dict[str, Any]]:
+    """Analyze Claude usage data from .jsonl files."""
     try:
-        stats_file = Path.home() / '.claude' / 'stats-cache.json'
-        if not stats_file.exists():
-            return None, None
+        data_path = get_claude_data_path()
+        if not data_path:
+            return None
 
-        with open(stats_file, 'r') as f:
-            stats = json.load(f)
+        # Collect data from the last 5 hours (current session window)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=5)
+        current_session_data = []
 
-        daily_activity = stats.get('dailyActivity', [])
-        if not daily_activity:
-            return None, None
+        # Collect historical data for P90 calculation (last 8 days)
+        history_cutoff = datetime.now(timezone.utc) - timedelta(days=8)
+        all_sessions = []
+        current_session_tokens = 0
+        current_session_cost = 0.0
+        last_time = None
 
-        # Get today's date and calculate week start
-        today = datetime.now().date()
-        week_start = today - timedelta(days=today.weekday())
-
-        # Find today's activity
-        today_str = today.strftime("%Y-%m-%d")
-        today_msgs = 0
-        week_msgs = 0
-
-        for activity in daily_activity:
-            activity_date = activity.get('date', '')
-            msg_count = activity.get('messageCount', 0)
-
-            if activity_date == today_str:
-                today_msgs = msg_count
-
-            # Count weekly messages
+        # Read all JSONL files
+        for jsonl_file in sorted(data_path.rglob("*.jsonl"), key=lambda f: f.stat().st_mtime):
             try:
-                act_date = datetime.strptime(activity_date, "%Y-%m-%d").date()
-                if act_date >= week_start:
-                    week_msgs += msg_count
-            except ValueError:
-                pass
+                with open(jsonl_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
 
-        # Calculate percentages (assume 2000 daily, 10000 weekly as limits)
-        # These are rough estimates - adjust based on your actual usage patterns
-        daily_limit = 2000
-        weekly_limit = 10000
+                        try:
+                            data = json.loads(line)
 
-        daily_pct = min(100, (today_msgs / daily_limit) * 100) if daily_limit > 0 else 0
-        weekly_pct = min(100, (week_msgs / weekly_limit) * 100) if weekly_limit > 0 else 0
+                            # Parse timestamp
+                            timestamp_str = data.get('timestamp', '')
+                            if not timestamp_str:
+                                continue
 
-        return daily_pct, weekly_pct
-    except (json.JSONDecodeError, KeyError, IOError):
-        return None, None
+                            if timestamp_str.endswith('Z'):
+                                timestamp_str = timestamp_str[:-1] + '+00:00'
+
+                            timestamp = datetime.fromisoformat(timestamp_str)
+
+                            # Extract usage data
+                            usage = data.get('usage', {})
+                            if not usage and 'message' in data and isinstance(data['message'], dict):
+                                usage = data['message'].get('usage', {})
+
+                            if not usage:
+                                continue
+
+                            # Calculate tokens
+                            input_tokens = usage.get('input_tokens', 0)
+                            output_tokens = usage.get('output_tokens', 0)
+                            cache_creation = usage.get('cache_creation_input_tokens', 0)
+
+                            total_tokens = input_tokens + output_tokens + cache_creation
+
+                            if total_tokens == 0:
+                                continue
+
+                            # Estimate cost (Sonnet 3.5 pricing: input $3/M, output $15/M)
+                            cost = (input_tokens * 3 + output_tokens * 15 + cache_creation * 3.75) / 1000000
+
+                            entry = {
+                                'timestamp': timestamp,
+                                'total_tokens': total_tokens,
+                                'cost': cost,
+                            }
+
+                            # Current 5-hour session data
+                            if timestamp >= cutoff_time:
+                                current_session_data.append(entry)
+
+                            # Historical session grouping (for P90 calculation)
+                            if timestamp >= history_cutoff:
+                                if (last_time is None or
+                                    (timestamp - last_time).total_seconds() > 5 * 3600):
+                                    # Save previous session
+                                    if current_session_tokens > 0:
+                                        all_sessions.append({
+                                            'tokens': current_session_tokens,
+                                            'cost': current_session_cost
+                                        })
+                                    # Start new session
+                                    current_session_tokens = total_tokens
+                                    current_session_cost = cost
+                                else:
+                                    # Continue current session
+                                    current_session_tokens += total_tokens
+                                    current_session_cost += cost
+
+                                last_time = timestamp
+
+                        except (json.JSONDecodeError, ValueError, TypeError):
+                            continue
+
+            except Exception:
+                continue
+
+        # Save last session
+        if current_session_tokens > 0:
+            all_sessions.append({
+                'tokens': current_session_tokens,
+                'cost': current_session_cost
+            })
+
+        if not current_session_data:
+            return None
+
+        # Calculate current session statistics
+        total_tokens = sum(e['total_tokens'] for e in current_session_data)
+        total_cost = sum(e['cost'] for e in current_session_data)
+
+        # Calculate P90 limit from historical sessions
+        if len(all_sessions) >= 5:
+            session_tokens = [s['tokens'] for s in all_sessions]
+            session_costs = [s['cost'] for s in all_sessions]
+            session_tokens.sort()
+            session_costs.sort()
+
+            p90_index = int(len(session_tokens) * 0.9)
+            token_limit = max(session_tokens[min(p90_index, len(session_tokens) - 1)], 19000)
+            cost_limit = max(session_costs[min(p90_index, len(session_costs) - 1)] * 1.2, 18.0)
+        else:
+            # Default limits based on current usage
+            if total_tokens > 100000:
+                token_limit, cost_limit = 220000, 140.0
+            elif total_tokens > 50000:
+                token_limit, cost_limit = 88000, 35.0
+            else:
+                token_limit, cost_limit = 19000, 18.0
+
+        return {
+            'total_tokens': total_tokens,
+            'token_limit': int(token_limit),
+            'cost_usd': total_cost,
+            'cost_limit': cost_limit,
+            'messages_count': len(current_session_data),
+            'session_start': current_session_data[0]['timestamp'] if current_session_data else None,
+        }
+
+    except Exception:
+        return None
+
+
+def calculate_reset_time(session_start: Optional[datetime] = None) -> str:
+    """Calculate time until session reset (5-hour rolling window)."""
+    try:
+        if session_start:
+            session_end = session_start + timedelta(hours=5)
+            now = datetime.now(timezone.utc)
+
+            if session_end > now:
+                diff = session_end - now
+                total_minutes = int(diff.total_seconds() / 60)
+                hours = total_minutes // 60
+                mins = total_minutes % 60
+                return f"{hours}h{mins:02d}m"
+
+        # Fallback: estimate next reset
+        now = datetime.now()
+        today_2pm = now.replace(hour=14, minute=0, second=0, microsecond=0)
+        next_reset = today_2pm if now < today_2pm else today_2pm + timedelta(days=1)
+        diff = next_reset - now
+
+        total_minutes = int(diff.total_seconds() / 60)
+        hours = total_minutes // 60
+        mins = total_minutes % 60
+
+        return f"{hours}h{mins:02d}m"
+    except Exception:
+        return "N/A"
+
+
+def format_number(num: float) -> str:
+    """Format number for display (e.g., 48000 -> 48.0k)."""
+    if num >= 1000000:
+        return f"{num/1000000:.1f}M"
+    elif num >= 1000:
+        return f"{num/1000:.1f}k"
+    else:
+        return f"{num:.0f}"
 
 
 def main():
@@ -261,21 +431,30 @@ def main():
 
     # Context usage with progress bar
     ctx_bar = progress_bar(context_used, width=8)
-    components.append(f"ctx:{ctx_bar}")
+    components.append(f"🧠 {ctx_bar}")
 
-    # Model and usage stats with progress bars
-    daily_usage, weekly_usage = get_usage_stats()
-    model_part = model_name
+    # Analyze usage data from Claude files
+    usage_data = analyze_usage_data()
 
-    if daily_usage is not None and weekly_usage is not None:
-        daily_bar = progress_bar(daily_usage, width=8)
-        weekly_bar = progress_bar(weekly_usage, width=8)
-        model_part += f"@{daily_bar}/{weekly_bar}"
-    elif daily_usage is not None:
-        daily_bar = progress_bar(daily_usage, width=8)
-        model_part += f"@{daily_bar}"
+    if usage_data:
+        # Token usage with progress bar
+        token_pct = (usage_data['total_tokens'] / usage_data['token_limit']) * 100 if usage_data['token_limit'] > 0 else 0
+        token_bar = progress_bar(token_pct, width=8)
+        tokens_text = f"🔋{format_number(usage_data['total_tokens'])}/{format_number(usage_data['token_limit'])} {token_bar}"
 
-    components.append(model_part)
+        # Cost with progress bar
+        cost_pct = (usage_data['cost_usd'] / usage_data['cost_limit']) * 100 if usage_data['cost_limit'] > 0 else 0
+        cost_bar = progress_bar(cost_pct, width=8)
+        cost_text = f"💰${usage_data['cost_usd']:.2f}/${usage_data['cost_limit']:.2f} {cost_bar}"
+
+        # Reset countdown timer
+        reset_time = calculate_reset_time(usage_data.get('session_start'))
+        time_text = f"⏱️ {reset_time}"
+
+        components.extend([tokens_text, cost_text, time_text])
+
+    # Model name at the end
+    components.append(f"🤖{model_name}")
 
     # Output statusline
     statusline = " | ".join(components)
