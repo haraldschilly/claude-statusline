@@ -29,9 +29,8 @@ ln -sf ~/p/claude-statusline/statusline.py ~/.claude/statusline.py
 
 ### Core Features
 
-**Real Token & Cost Tracking**
+**Real Token Tracking**
 - 🔋 Token usage with limits: `🔋843.4k/4.2M █░░░░░░░`
-- 💰 Cost estimation: `💰$3.19/$18.58 █░░░░░░░`
 - ⏱️ Session countdown: `⏱️ 0h46m` until reset
 - 📊 Smart P90 limits (adapts to your usage)
 
@@ -52,7 +51,7 @@ ln -sf ~/p/claude-statusline/statusline.py ~/.claude/statusline.py
 ### Example Output
 
 ```
-origin/main A3 M1 D2 +45 -12 | 🧠███░░░░░ | 🔋843.4k/4.2M █░░░░░░░ | 💰$3.19/$18.58 █░░░░░░░ | ⏱️ 0h46m | 🤖Sonnet 4.5
+origin/main A3 M1 D2 +45 -12 | 🧠███░░░░░ | 🔋843.4k/4.2M █░░░░░░░ | ⏱️ 0h46m | 🤖 Sonnet 4.5
 ```
 
 ## Customization
@@ -61,7 +60,7 @@ origin/main A3 M1 D2 +45 -12 | 🧠███░░░░░ | 🔋843.4k/4.2M �
 Limits are **automatically calculated** from your usage history (P90 method):
 - Analyzes last 8 days of sessions
 - Uses 90th percentile as threshold
-- Falls back to sensible defaults (19k-220k tokens, $18-$140)
+- Falls back to sensible defaults (19k-220k tokens)
 
 ### Change Progress Bar Width
 In `main()` function, find `width=8`:

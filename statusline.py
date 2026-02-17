@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
 Custom statusline for Claude Code
-Shows: [git info] | [PR info] | [🧠 context] | [🔋 tokens] | [💰 cost] | [⏱️ timer] | [🤖 model]
+Shows: [git info] | [PR info] | [🧠 context] | [🔋 tokens] | [⏱️ timer] | [🤖 model]
 
 Features:
 - Real token usage tracking from .jsonl files
-- Estimated API costs based on token consumption
 - Adaptive P90 limits from usage history
 - 5-hour session countdown timer
 - Colored progress bars and git status badges
@@ -442,19 +441,19 @@ def main():
         token_bar = progress_bar(token_pct, width=8)
         tokens_text = f"🔋{format_number(usage_data['total_tokens'])}/{format_number(usage_data['token_limit'])} {token_bar}"
 
-        # Cost with progress bar
-        cost_pct = (usage_data['cost_usd'] / usage_data['cost_limit']) * 100 if usage_data['cost_limit'] > 0 else 0
-        cost_bar = progress_bar(cost_pct, width=8)
-        cost_text = f"💰${usage_data['cost_usd']:.2f}/${usage_data['cost_limit']:.2f} {cost_bar}"
+        # # Cost with progress bar
+        # cost_pct = (usage_data['cost_usd'] / usage_data['cost_limit']) * 100 if usage_data['cost_limit'] > 0 else 0
+        # cost_bar = progress_bar(cost_pct, width=8)
+        # cost_text = f"💰${usage_data['cost_usd']:.2f}/${usage_data['cost_limit']:.2f} {cost_bar}"
 
         # Reset countdown timer
         reset_time = calculate_reset_time(usage_data.get('session_start'))
         time_text = f"⏱️ {reset_time}"
 
-        components.extend([tokens_text, cost_text, time_text])
+        components.extend([tokens_text, time_text])
 
     # Model name at the end
-    components.append(f"🤖{model_name}")
+    components.append(f"🤖 {model_name}")
 
     # Output statusline
     statusline = " | ".join(components)

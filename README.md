@@ -5,7 +5,6 @@ A beautiful, informative statusline for [Claude Code](https://claude.com/code) w
 ## Features
 
 - 🔋 **Real Token Usage Tracking** - Analyzes actual token consumption from Claude's `.jsonl` files
-- 💰 **Cost Estimation** - Shows estimated API costs based on your token usage
 - 📊 **Visual Progress Bars** - Color-coded ASCII bars that change from green → orange → red as limits approach
 - ⏱️ **Session Countdown Timer** - Shows time remaining until your 5-hour session resets
 - 📈 **Smart P90 Limits** - Automatically calculates personalized usage limits from your history (90th percentile)
@@ -20,18 +19,18 @@ A beautiful, informative statusline for [Claude Code](https://claude.com/code) w
 
 ```bash
 # Normal usage (green progress bars, colored badges):
-origin/main A3 M1 +45 -12 | 🧠███░░░░░ | 🔋843.4k/4.2M █░░░░░░░ | 💰$3.19/$18.58 █░░░░░░░ | ⏱️ 0h46m | 🤖Sonnet 4.5
+origin/main A3 M1 +45 -12 | 🧠███░░░░░ | 🔋843.4k/4.2M █░░░░░░░ | ⏱️ 0h46m | 🤖 Sonnet 4.5
 # A3 = green background, M1 = orange background
 # +45 = bold green, -12 = bold red
 
 # With Pull Request:
-origin/feature M2 | PR#123: Add authentication | 🧠█████░░░ | 🔋1.2M/4.2M ███░░░░░ | 💰$8.45/$18.58 ████░░░░ | ⏱️ 2h15m | 🤖Opus
+origin/feature M2 | PR#123: Add authentication | 🧠█████░░░ | 🔋1.2M/4.2M ███░░░░░ | ⏱️ 2h15m | 🤖 Opus
 
 # Warning level (orange bars at 80%+):
-origin/hotfix A5 D1 +102 -87 | 🧠██████░░ | 🔋3.5M/4.2M ██████░░ | 💰$15.20/$18.58 ██████░░ | ⏱️ 1h30m | 🤖Sonnet
+origin/hotfix A5 D1 +102 -87 | 🧠██████░░ | 🔋3.5M/4.2M ██████░░ | ⏱️ 1h30m | 🤖 Sonnet
 
 # Critical level (red bars at 90%+):
-origin/bugfix M3 D2 +23 -45 | 🧠███████░ | 🔋3.9M/4.2M ███████░ | 💰$17.10/$18.58 ███████░ | ⏱️ 0h22m | 🤖Sonnet
+origin/bugfix M3 D2 +23 -45 | 🧠███████░ | 🔋3.9M/4.2M ███████░ | ⏱️ 0h22m | 🤖 Sonnet
 ```
 
 ## Components
@@ -42,9 +41,8 @@ origin/bugfix M3 D2 +23 -45 | 🧠███████░ | 🔋3.9M/4.2M █�
 | **PR Status** | Pull request number and title (requires `gh` CLI) | `PR#123: Add new feature` |
 | **Context** | Current session context window usage with visual bar | `🧠 ███░░░░░` |
 | **Token Usage** | Real token consumption with limit and progress bar | `🔋843.4k/4.2M █░░░░░░░` |
-| **Cost Estimate** | Estimated API cost with limit and progress bar | `💰$3.19/$18.58 █░░░░░░░` |
 | **Reset Timer** | Countdown to 5-hour session reset | `⏱️ 0h46m` |
-| **Model** | Current Claude model | `🤖Sonnet 4.5` |
+| **Model** | Current Claude model | `🤖 Sonnet 4.5` |
 
 ### File Status Badge Colors
 
@@ -52,12 +50,11 @@ origin/bugfix M3 D2 +23 -45 | 🧠███████░ | 🔋3.9M/4.2M █�
 - 🟠 **M#** - Modified files (orange background)
 - 🔴 **D#** - Deleted files (red background)
 
-### Token & Cost Tracking
+### Token Tracking
 
 The statusline analyzes your actual token usage from `~/.claude/projects/*.jsonl` files:
 
 - **Tokens**: Input + Output + Cache creation tokens
-- **Cost**: Estimated using Claude API pricing (Input: $3/M, Output: $15/M, Cache: $3.75/M)
 - **Limits**: Calculated from your usage history (90th percentile) over the last 8 days
 - **Session**: 5-hour rolling window that resets automatically
 
@@ -110,14 +107,14 @@ ln -sf ~/.claude-statusline/statusline.py ~/.claude/statusline.py
 Limits are **automatically calculated** from your usage history using the 90th percentile (P90) method:
 
 - Analyzes your last 8 days of sessions
-- Calculates the 90th percentile of token usage and costs
+- Calculates the 90th percentile of token usage
 - Adapts to your actual usage patterns over time
 - Falls back to sensible defaults if insufficient history
 
 **Default fallback limits:**
-- Light usage: 19k tokens, $18 cost
-- Medium usage: 88k tokens, $35 cost
-- Heavy usage: 220k tokens, $140 cost
+- Light usage: 19k tokens
+- Medium usage: 88k tokens
+- Heavy usage: 220k tokens
 
 ### Customize Progress Bars
 
@@ -184,7 +181,6 @@ The script:
 4. **Analyzes actual token usage** from `~/.claude/projects/*.jsonl` files
    - Reads all conversation data from the last 5 hours (current session)
    - Extracts input/output/cache tokens from usage metadata
-   - Calculates costs using Claude API pricing
 5. **Calculates personalized limits** using P90 method
    - Analyzes last 8 days of session history
    - Uses 90th percentile as adaptive threshold
