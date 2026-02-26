@@ -46,18 +46,22 @@ def get_git_info(cwd):
     if not run_cmd("git rev-parse --git-dir", cwd=cwd):
         return None
 
-    # Get remote name (default to 'origin' or first remote)
-    remote = run_cmd("git remote", cwd=cwd)
-    if remote:
-        remote = remote.split('\n')[0]
-    else:
-        remote = "local"
-
     # Get current branch
     branch = run_cmd("git branch --show-current", cwd=cwd)
     if not branch:
         # Detached HEAD state
         branch = run_cmd("git rev-parse --short HEAD", cwd=cwd) or "detached"
+
+    # Get the remote that the current branch is tracking
+    remote = run_cmd(f"git config branch.{branch}.remote", cwd=cwd) if branch else None
+    if not remote:
+        # Fallback: use 'origin' if it exists, else first remote, else 'local'
+        remotes = run_cmd("git remote", cwd=cwd)
+        if remotes:
+            remote_list = remotes.split('\n')
+            remote = "origin" if "origin" in remote_list else remote_list[0]
+        else:
+            remote = "local"
 
     # Get status information
     status_output = run_cmd("git status --porcelain", cwd=cwd) or ""
