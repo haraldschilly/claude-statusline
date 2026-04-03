@@ -456,8 +456,27 @@ def main():
 
         components.extend([tokens_text, time_text])
 
-    # Model name at the end
-    components.append(f"🤖 {model_name}")
+    # Effort level (env var overrides settings file)
+    effort = os.environ.get("CLAUDE_CODE_EFFORT_LEVEL")
+    if not effort:
+        for settings_path in [
+            Path.home() / '.claude' / 'settings.json',
+            Path.home() / '.config' / 'claude' / 'settings.json',
+        ]:
+            if settings_path.exists():
+                try:
+                    with open(settings_path) as f:
+                        effort = json.load(f).get('effortLevel')
+                    if effort:
+                        break
+                except Exception:
+                    pass
+    effort_icons = {'low': '🌑', 'medium': '🌗', 'high': '🌕', 'max': '🌟'}
+    effort_icon = effort_icons.get(effort or 'medium', '🌗')
+    effort_text = f"{effort_icon} {effort or 'medium'}"
+
+    # Model name and effort at the end
+    components.append(f"🤖 {model_name} {effort_text}")
 
     # Output statusline
     statusline = " | ".join(components)
