@@ -422,6 +422,11 @@ def main():
     # Build statusline components
     components = []
 
+    # Directory name (git root basename, or cwd basename as fallback)
+    git_toplevel = run_cmd("git rev-parse --show-toplevel", cwd=cwd)
+    dir_name = Path(git_toplevel).name if git_toplevel else Path(cwd).name
+    components.append(dir_name)
+
     # Git information
     git_info = get_git_info(cwd)
     if git_info:
