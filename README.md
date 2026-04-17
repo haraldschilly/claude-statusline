@@ -13,7 +13,7 @@ A beautiful, informative statusline for [Claude Code](https://claude.com/code) w
 - 🎯 **Smart Color Coding** - Green (<80%), Orange (80-89%), Red (≥90%)
 - 🔄 **Git Integration** - Shows branch, remote, file status badges, and line changes
 - 🔀 **Pull Request Info** - Displays PR number and title (via `gh` CLI)
-- 🌗 **Effort Level Indicator** - Moon icon showing current reasoning effort (🌑 low, 🌗 medium, 🌕 high, 🌟 max)
+- ▃ **Effort Level Indicator** - Block bar showing current reasoning effort (▁ low, ▃ medium, ▅ high, ▇ xhigh)
 - 📁 **Project Directory** - Shows git root directory name (or working directory) at a glance
 - ⚡ **Fast & Lightweight** - Pure Python, no external dependencies
 
@@ -21,15 +21,15 @@ A beautiful, informative statusline for [Claude Code](https://claude.com/code) w
 
 ```bash
 # Normal usage (green progress bars, colored badges):
-my-project | origin/main A3 M1 +45 -12 | 🧠███░░░░░ | 🔋843.4k/4.2M █░░░░░░░ | ⏱️ 0h46m | 🤖 Sonnet 4.5 🌗 medium
+my-project | origin/main A3 M1 +45 -12 | 🧠███░░░░░ | 🔋843.4k/4.2M █░░░░░░░ | ⏱️ 0h46m | 🤖 Sonnet 4.5 ▃ medium
 # A3 = green background, M1 = orange background
 # +45 = bold green, -12 = bold red
 
 # With Pull Request:
-my-app | origin/feature M2 | PR#123: Add authentication | 🧠█████░░░ | 🔋1.2M/4.2M ███░░░░░ | ⏱️ 2h15m | 🤖 Opus 🌕 high
+my-app | origin/feature M2 | PR#123: Add authentication | 🧠█████░░░ | 🔋1.2M/4.2M ███░░░░░ | ⏱️ 2h15m | 🤖 Opus ▅ high
 
 # Warning level (orange bars at 80%+):
-my-project | origin/hotfix A5 D1 +102 -87 | 🧠██████░░ | 🔋3.5M/4.2M ██████░░ | ⏱️ 1h30m | 🤖 Sonnet 🌗 medium
+my-project | origin/hotfix A5 D1 +102 -87 | 🧠██████░░ | 🔋3.5M/4.2M ██████░░ | ⏱️ 1h30m | 🤖 Sonnet ▃ medium
 
 # Critical level (red bars at 90%+):
 my-project | origin/bugfix M3 D2 +23 -45 | 🧠███████░ | 🔋3.9M/4.2M ███████░ | ⏱️ 0h22m | 🤖 Sonnet 🌑 low
@@ -45,7 +45,7 @@ my-project | origin/bugfix M3 D2 +23 -45 | 🧠███████░ | 🔋3.
 | **Context** | Current session context window usage with visual bar | `🧠 ███░░░░░` |
 | **Token Usage** | Real token consumption with limit and progress bar | `🔋843.4k/4.2M █░░░░░░░` |
 | **Reset Timer** | Countdown to 5-hour session reset | `⏱️ 0h46m` |
-| **Model & Effort** | Current Claude model and reasoning effort level | `🤖 Sonnet 4.5 🌗 medium` |
+| **Model & Effort** | Current Claude model and reasoning effort level | `🤖 Sonnet 4.5 ▃ medium` |
 
 ### File Status Badge Colors
 
@@ -55,12 +55,12 @@ my-project | origin/bugfix M3 D2 +23 -45 | 🧠███████░ | 🔋3.
 
 ### Effort Level Icons
 
-- 🌑 **low** - Minimal reasoning
-- 🌗 **medium** - Balanced (default)
-- 🌕 **high** - Deep reasoning
-- 🌟 **max** - Maximum reasoning (Opus only)
+- ▁ **low** - Minimal reasoning
+- ▃ **medium** - Balanced (default)
+- ▅ **high** - Deep reasoning
+- ▇ **xhigh** - Maximum reasoning
 
-The effort level is read from the `CLAUDE_CODE_EFFORT_LEVEL` environment variable first, then from `~/.claude/settings.json` (`effortLevel` key). Change it mid-session with `/effort low|medium|high|max`.
+The effort level is read from the `CLAUDE_CODE_EFFORT_LEVEL` environment variable first, then from `~/.claude/settings.json` (`effortLevel` key). Change it mid-session with `/effort low|medium|high|xhigh`.
 
 ### Token Tracking
 

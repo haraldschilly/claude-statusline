@@ -476,9 +476,15 @@ def main():
                         break
                 except Exception:
                     pass
-    effort_icons = {'low': '🌑', 'medium': '🌗', 'high': '🌕', 'max': '🌟'}
-    effort_icon = effort_icons.get(effort or 'medium', '🌗')
-    effort_text = f"{effort_icon} {effort or 'medium'}"
+    effort_icons = {
+        'low': '▁',
+        'medium': '▃',
+        'high': '▅',
+        'xhigh': '▇',
+    }
+    effort_name = effort or 'medium'
+    effort_icon = effort_icons.get(effort_name, '❔')
+    effort_text = f"{effort_icon} {effort_name}"
 
     # Model name and effort at the end
     components.append(f"🤖 {model_name} {effort_text}")
