@@ -452,6 +452,8 @@ def main():
     # Extract information from JSON
     cwd = data.get('workspace', {}).get('current_dir', str(Path.cwd()))
     model_name = data.get('model', {}).get('display_name', 'Unknown')
+    # Shorten verbose context suffix like "(1M context)" to "[1M]"
+    model_name = re.sub(r'\s*\(([0-9]+[kKmM])\s+context\)', r' [\1]', model_name)
     context_used = data.get('context_window', {}).get('used_percentage', 0)
 
     # Terminal width for adaptive truncation (fallback 120)
