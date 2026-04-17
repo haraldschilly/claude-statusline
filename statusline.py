@@ -14,12 +14,47 @@ Inspired by: https://github.com/leeguooooo/claude-code-usage-bar
 """
 
 import json
+import re
+import shutil
 import subprocess
 import sys
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, List
+
+ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+
+
+def visible_len(s: str) -> int:
+    """Approximate display width: strip ANSI, count wide chars (emoji) as 2."""
+    stripped = ANSI_RE.sub('', s)
+    width = 0
+    for ch in stripped:
+        cp = ord(ch)
+        if cp >= 0x1100 and (
+            cp <= 0x115F
+            or 0x2E80 <= cp <= 0x303E
+            or 0x3041 <= cp <= 0xA4CF
+            or 0xAC00 <= cp <= 0xD7A3
+            or 0xF900 <= cp <= 0xFAFF
+            or 0xFE30 <= cp <= 0xFE4F
+            or 0xFF00 <= cp <= 0xFF60
+            or 0xFFE0 <= cp <= 0xFFE6
+            or 0x1F300 <= cp <= 0x1FAFF
+            or 0x2600 <= cp <= 0x27BF
+        ):
+            width += 2
+        else:
+            width += 1
+    return width
+
+
+def truncate(s: str, max_len: int) -> str:
+    """Truncate plain string (no ANSI) to max display width, appending …."""
+    if len(s) <= max_len:
+        return s
+    return s[:max(1, max_len - 1)] + '…'
 
 
 def run_cmd(cmd, cwd=None, check=False):
@@ -40,20 +75,20 @@ def run_cmd(cmd, cwd=None, check=False):
         return None
 
 
-def get_git_info(cwd):
+def get_git_info(cwd, max_branch_len=60):
     """Get git repository information."""
     # Check if we're in a git repo
     if not run_cmd("git rev-parse --git-dir", cwd=cwd):
         return None
 
-    # Get current branch
-    branch = run_cmd("git branch --show-current", cwd=cwd)
-    if not branch:
+    # Get current branch (raw name, used to look up tracking remote)
+    branch_raw = run_cmd("git branch --show-current", cwd=cwd)
+    if not branch_raw:
         # Detached HEAD state
-        branch = run_cmd("git rev-parse --short HEAD", cwd=cwd) or "detached"
+        branch_raw = run_cmd("git rev-parse --short HEAD", cwd=cwd) or "detached"
 
-    # Get the remote that the current branch is tracking
-    remote = run_cmd(f"git config branch.{branch}.remote", cwd=cwd) if branch else None
+    # Get the remote that the current branch is tracking (use untruncated name)
+    remote = run_cmd(f"git config branch.{branch_raw}.remote", cwd=cwd) if branch_raw else None
     if not remote:
         # Fallback: use 'origin' if it exists, else first remote, else 'local'
         remotes = run_cmd("git remote", cwd=cwd)
@@ -124,6 +159,9 @@ def get_git_info(cwd):
         changes.append(f"{BOLD_RED}-{total_removed}{RESET_LINE}")
     changes_str = " ".join(changes)
 
+    # Truncate branch name only for display (not for git lookups above)
+    branch = truncate(branch_raw, max_branch_len)
+
     # Combine everything
     parts = [f"{remote}/{branch}"]
     if status_str:
@@ -134,29 +172,26 @@ def get_git_info(cwd):
     return " ".join(parts)
 
 
-def get_pr_info(cwd):
-    """Get GitHub PR information using gh CLI."""
-    # Check if gh is available
+def fetch_pr_data(cwd):
+    """Fetch raw PR data once (number and title). Returns (number, title) or None."""
     if not run_cmd("command -v gh"):
         return None
-
-    # Get current branch PR
     pr_info = run_cmd("gh pr view --json number,title 2>/dev/null", cwd=cwd)
     if not pr_info:
         return None
-
     try:
         pr_data = json.loads(pr_info)
-        number = pr_data.get('number')
-        title = pr_data.get('title', '')
-
-        # Truncate title if too long
-        if len(title) > 40:
-            title = title[:37] + "..."
-
-        return f"PR#{number}: {title}"
+        return pr_data.get('number'), pr_data.get('title', '')
     except (json.JSONDecodeError, KeyError):
         return None
+
+
+def format_pr(pr_data, max_title_len=40):
+    """Format cached PR data into display string."""
+    if not pr_data:
+        return None
+    number, title = pr_data
+    return f"PR#{number}: {truncate(title, max_title_len)}"
 
 
 def progress_bar(percentage, width=8):
@@ -419,6 +454,16 @@ def main():
     model_name = data.get('model', {}).get('display_name', 'Unknown')
     context_used = data.get('context_window', {}).get('used_percentage', 0)
 
+    # Terminal width for adaptive truncation (fallback 120)
+    try:
+        term_width = int(os.environ.get('COLUMNS') or 0) or shutil.get_terminal_size(fallback=(120, 24)).columns
+    except Exception:
+        term_width = 120
+
+    # Generous initial budgets; actual truncation happens after measuring below.
+    branch_budget = 60
+    pr_title_budget = 80
+
     # Build statusline components
     components = []
 
@@ -428,12 +473,13 @@ def main():
     components.append(dir_name)
 
     # Git information
-    git_info = get_git_info(cwd)
+    git_info = get_git_info(cwd, max_branch_len=branch_budget)
     if git_info:
         components.append(git_info)
 
-    # PR information
-    pr_info = get_pr_info(cwd)
+    # PR information (fetch once, reformat as needed)
+    pr_data = fetch_pr_data(cwd)
+    pr_info = format_pr(pr_data, max_title_len=pr_title_budget)
     if pr_info:
         components.append(pr_info)
 
@@ -489,8 +535,27 @@ def main():
     # Model name and effort at the end
     components.append(f"🤖 {model_name} {effort_text}")
 
-    # Output statusline
+    # Adaptive truncation: iteratively shrink branch and PR title to fit.
+    def render(branch_len, pr_len):
+        parts = [dir_name]
+        g = get_git_info(cwd, max_branch_len=branch_len)
+        if g:
+            parts.append(g)
+        p = format_pr(pr_data, max_title_len=pr_len)
+        if p:
+            parts.append(p)
+        parts.append(f"🧠 {ctx_bar}")
+        if usage_data:
+            parts.extend([tokens_text, time_text])
+        parts.append(f"🤖 {model_name} {effort_text}")
+        return " | ".join(parts)
+
     statusline = " | ".join(components)
+    while visible_len(statusline) > term_width and (branch_budget > 10 or pr_title_budget > 12):
+        branch_budget = max(10, branch_budget - 4)
+        pr_title_budget = max(12, pr_title_budget - 4)
+        statusline = render(branch_budget, pr_title_budget)
+
     print(statusline)
 
 
