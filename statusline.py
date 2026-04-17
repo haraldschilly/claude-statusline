@@ -259,128 +259,108 @@ def get_claude_data_path() -> Optional[Path]:
 
 
 def analyze_usage_data() -> Optional[Dict[str, Any]]:
-    """Analyze Claude usage data from .jsonl files."""
+    """Analyze Claude usage data from .jsonl files.
+
+    A "session" starts at the first message and lasts 5 hours from that
+    timestamp. The next message ≥5h after the session start begins a new
+    session. Entries are gathered from all jsonl files, sorted by timestamp,
+    and grouped accordingly.
+    """
     try:
         data_path = get_claude_data_path()
         if not data_path:
             return None
 
-        # Collect data from the last 5 hours (current session window)
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=5)
-        current_session_data = []
+        now_utc = datetime.now(timezone.utc)
+        history_cutoff = now_utc - timedelta(days=8)
 
-        # Collect historical data for P90 calculation (last 8 days)
-        history_cutoff = datetime.now(timezone.utc) - timedelta(days=8)
-        all_sessions = []
-        current_session_tokens = 0
-        current_session_cost = 0.0
-        last_time = None
-
-        # Read all JSONL files
-        for jsonl_file in sorted(data_path.rglob("*.jsonl"), key=lambda f: f.stat().st_mtime):
+        # Collect every usage entry (timestamp, tokens, cost) from the last 8 days.
+        entries = []
+        for jsonl_file in data_path.rglob("*.jsonl"):
             try:
                 with open(jsonl_file, 'r', encoding='utf-8') as f:
                     for line in f:
                         line = line.strip()
                         if not line:
                             continue
-
                         try:
                             data = json.loads(line)
 
-                            # Parse timestamp
                             timestamp_str = data.get('timestamp', '')
                             if not timestamp_str:
                                 continue
-
                             if timestamp_str.endswith('Z'):
                                 timestamp_str = timestamp_str[:-1] + '+00:00'
-
                             timestamp = datetime.fromisoformat(timestamp_str)
 
-                            # Extract usage data
+                            if timestamp < history_cutoff:
+                                continue
+
                             usage = data.get('usage', {})
                             if not usage and 'message' in data and isinstance(data['message'], dict):
                                 usage = data['message'].get('usage', {})
-
                             if not usage:
                                 continue
 
-                            # Calculate tokens
                             input_tokens = usage.get('input_tokens', 0)
                             output_tokens = usage.get('output_tokens', 0)
                             cache_creation = usage.get('cache_creation_input_tokens', 0)
-
-                            total_tokens = input_tokens + output_tokens + cache_creation
-
-                            if total_tokens == 0:
+                            total = input_tokens + output_tokens + cache_creation
+                            if total == 0:
                                 continue
 
                             # Estimate cost (Sonnet 3.5 pricing: input $3/M, output $15/M)
                             cost = (input_tokens * 3 + output_tokens * 15 + cache_creation * 3.75) / 1000000
 
-                            entry = {
-                                'timestamp': timestamp,
-                                'total_tokens': total_tokens,
-                                'cost': cost,
-                            }
-
-                            # Current 5-hour session data
-                            if timestamp >= cutoff_time:
-                                current_session_data.append(entry)
-
-                            # Historical session grouping (for P90 calculation)
-                            if timestamp >= history_cutoff:
-                                if (last_time is None or
-                                    (timestamp - last_time).total_seconds() > 5 * 3600):
-                                    # Save previous session
-                                    if current_session_tokens > 0:
-                                        all_sessions.append({
-                                            'tokens': current_session_tokens,
-                                            'cost': current_session_cost
-                                        })
-                                    # Start new session
-                                    current_session_tokens = total_tokens
-                                    current_session_cost = cost
-                                else:
-                                    # Continue current session
-                                    current_session_tokens += total_tokens
-                                    current_session_cost += cost
-
-                                last_time = timestamp
-
+                            entries.append((timestamp, total, cost))
                         except (json.JSONDecodeError, ValueError, TypeError):
                             continue
-
             except Exception:
                 continue
 
-        # Save last session
-        if current_session_tokens > 0:
-            all_sessions.append({
-                'tokens': current_session_tokens,
-                'cost': current_session_cost
-            })
-
-        if not current_session_data:
+        if not entries:
             return None
 
-        # Calculate current session statistics
-        total_tokens = sum(e['total_tokens'] for e in current_session_data)
-        total_cost = sum(e['cost'] for e in current_session_data)
+        entries.sort(key=lambda e: e[0])
 
-        # Calculate P90 limit from historical sessions
-        if len(all_sessions) >= 5:
-            session_tokens = [s['tokens'] for s in all_sessions]
-            session_costs = [s['cost'] for s in all_sessions]
-            session_tokens.sort()
-            session_costs.sort()
+        # Group into sessions: session_start + 5h defines the session window.
+        # The next entry ≥5h after session_start begins a new session.
+        sessions = []
+        cur_start = None
+        cur_tokens = 0
+        cur_cost = 0.0
+        for ts, tokens, cost in entries:
+            if cur_start is None or (ts - cur_start).total_seconds() >= 5 * 3600:
+                if cur_start is not None:
+                    sessions.append({'start': cur_start, 'tokens': cur_tokens, 'cost': cur_cost})
+                cur_start = ts
+                cur_tokens = 0
+                cur_cost = 0.0
+            cur_tokens += tokens
+            cur_cost += cost
+        if cur_start is not None:
+            sessions.append({'start': cur_start, 'tokens': cur_tokens, 'cost': cur_cost})
 
+        # Determine the active session: the most recent one, only if still
+        # within its 5h window from now.
+        active = sessions[-1] if sessions else None
+        if not active or (now_utc - active['start']).total_seconds() >= 5 * 3600:
+            return None
+
+        total_tokens = active['tokens']
+        total_cost = active['cost']
+        session_start = active['start']
+
+        # Historical sessions (excluding the active one) feed P90 limits.
+        historical = sessions[:-1] if len(sessions) > 1 else []
+
+        if len(historical) >= 5:
+            session_tokens = sorted(s['tokens'] for s in historical)
+            session_costs = sorted(s['cost'] for s in historical)
             p90_index = int(len(session_tokens) * 0.9)
             token_limit = max(session_tokens[min(p90_index, len(session_tokens) - 1)], 19000)
             cost_limit = max(session_costs[min(p90_index, len(session_costs) - 1)] * 1.2, 18.0)
         else:
-            # Default limits based on current usage
             if total_tokens > 100000:
                 token_limit, cost_limit = 220000, 140.0
             elif total_tokens > 50000:
@@ -393,8 +373,7 @@ def analyze_usage_data() -> Optional[Dict[str, Any]]:
             'token_limit': int(token_limit),
             'cost_usd': total_cost,
             'cost_limit': cost_limit,
-            'messages_count': len(current_session_data),
-            'session_start': current_session_data[0]['timestamp'] if current_session_data else None,
+            'session_start': session_start,
         }
 
     except Exception:
