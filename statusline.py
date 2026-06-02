@@ -219,8 +219,10 @@ def progress_bar(percentage, width=8):
     else:
         color = GREEN
 
-    # Calculate filled and empty portions
-    filled = int((percentage / 100) * width)
+    # Calculate filled and empty portions.
+    # Clamp to [0, width] so a percentage >100% (over budget) renders a full
+    # bar instead of overflowing and breaking the statusline layout.
+    filled = max(0, min(width, int((percentage / 100) * width)))
     empty = width - filled
 
     # Use Unicode block characters for smooth progress
@@ -361,12 +363,18 @@ def analyze_usage_data() -> Optional[Dict[str, Any]]:
             token_limit = max(session_tokens[min(p90_index, len(session_tokens) - 1)], 19000)
             cost_limit = max(session_costs[min(p90_index, len(session_costs) - 1)] * 1.2, 18.0)
         else:
-            if total_tokens > 100000:
-                token_limit, cost_limit = 220000, 140.0
-            elif total_tokens > 50000:
-                token_limit, cost_limit = 88000, 35.0
+            # Cold start: fewer than 5 historical sessions to learn from.
+            # A session sums input+output+cache_creation across a 5h window;
+            # with prompt caching that routinely reaches 1M+ tokens, so the old
+            # fixed limits (19k/88k/220k) pegged the bar permanently red. Use
+            # realistic budgets; once ≥5 sessions of history exist the adaptive
+            # P90 limit above takes over automatically.
+            if total_tokens > 1_000_000:
+                token_limit, cost_limit = 3_000_000, 200.0
+            elif total_tokens > 250_000:
+                token_limit, cost_limit = 1_500_000, 100.0
             else:
-                token_limit, cost_limit = 19000, 18.0
+                token_limit, cost_limit = 500_000, 40.0
 
         return {
             'total_tokens': total_tokens,
