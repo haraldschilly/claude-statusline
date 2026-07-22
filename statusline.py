@@ -237,14 +237,15 @@ def get_claude_data_path() -> Optional[Path]:
     env_dir = os.environ.get("CLAUDE_CONFIG_DIR")
     if env_dir:
         env_path = Path(env_dir).expanduser()
-        if env_path.name == ".claude":
-            if (env_path / "projects").exists():
-                return env_path / "projects"
+        # The config dir may be named anything (e.g. ~/.claude-work), so first
+        # treat it as the config dir itself, then as a parent of one.
+        if (env_path / "projects").exists():
+            return env_path / "projects"
+        if (env_path / ".claude" / "projects").exists():
+            return env_path / ".claude" / "projects"
+        if env_path.exists():
             return env_path
-        else:
-            if (env_path / ".claude" / "projects").exists():
-                return env_path / ".claude" / "projects"
-            return env_path / ".claude"
+        return env_path / ".claude"
 
     # Check standard locations
     candidates = [
@@ -499,10 +500,15 @@ def main():
     # Effort level (env var overrides settings file)
     effort = os.environ.get("CLAUDE_CODE_EFFORT_LEVEL")
     if not effort:
-        for settings_path in [
+        settings_candidates = []
+        env_cfg = os.environ.get("CLAUDE_CONFIG_DIR")
+        if env_cfg:
+            settings_candidates.append(Path(env_cfg).expanduser() / 'settings.json')
+        settings_candidates += [
             Path.home() / '.claude' / 'settings.json',
             Path.home() / '.config' / 'claude' / 'settings.json',
-        ]:
+        ]
+        for settings_path in settings_candidates:
             if settings_path.exists():
                 try:
                     with open(settings_path) as f:
