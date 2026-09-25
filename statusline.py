@@ -28,6 +28,9 @@ ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
 # How long a cached `gh pr view` result stays valid (seconds).
 PR_CACHE_TTL = 60
 
+# Columns Claude Code's status line area loses to padding (measured: 5).
+STATUS_MARGIN = 6
+
 
 def visible_len(s: str) -> int:
     """Approximate display width: strip ANSI, count wide chars (emoji) as 2."""
@@ -58,6 +61,19 @@ def truncate(s: str, max_len: int) -> str:
     if len(s) <= max_len:
         return s
     return s[:max(1, max_len - 1)] + '…'
+
+
+def shorten_ref(ref: str, max_len: int) -> str:
+    """Shorten 'origin/claude/some-branch' to fit max_len.
+
+    First abbreviate every path segment but the last to its first char
+    ('o/c/some-branch'), then truncate the last segment with '…'.
+    """
+    if len(ref) <= max_len:
+        return ref
+    *prefix, name = ref.split('/')
+    head = ''.join(seg[:1] + '/' for seg in prefix)
+    return head + truncate(name, max(1, max_len - len(head)))
 
 
 def run_cmd(args: List[str], cwd=None, timeout=2) -> Optional[str]:
@@ -175,7 +191,7 @@ def format_git(git: Optional[Dict[str, Any]], max_branch_len=60) -> Optional[str
     BOLD_RED = '\033[1;31m'
     RESET = '\033[0m'
 
-    parts = [f"{git['remote']}/{truncate(git['branch'], max_branch_len)}"]
+    parts = [shorten_ref(f"{git['remote']}/{git['branch']}", max_branch_len)]
 
     badges = []
     if git['added']:
@@ -257,6 +273,8 @@ def format_pr(pr_data, max_title_len=40):
     if not pr_data:
         return None
     number, title = pr_data
+    if max_title_len <= 0:
+        return f"PR#{number}"
     return f"PR#{number}: {truncate(title, max_title_len)}"
 
 
@@ -409,11 +427,14 @@ def main():
     # used_percentage may be null early in a session
     context_used = (data.get('context_window') or {}).get('used_percentage') or 0
 
-    # Terminal width for adaptive truncation (fallback 120)
+    # Terminal width for adaptive truncation (fallback 120). Claude Code
+    # pads the status line area, so COLUMNS overstates the usable width by
+    # ~5 columns; keep a margin or the right end gets cut off.
     try:
         term_width = int(os.environ.get('COLUMNS') or 0) or shutil.get_terminal_size(fallback=(120, 24)).columns
     except Exception:
         term_width = 120
+    term_width -= STATUS_MARGIN
 
     # Gather everything once; the truncation loop below only re-formats.
     git = collect_git_data(cwd)
@@ -436,8 +457,8 @@ def main():
     effort_icon = effort_icons.get(effort_name, '❔')
     model_text = f"🤖 {model_name} {effort_icon} {effort_name}"
 
-    def render(branch_len, pr_len):
-        parts = [dir_name]
+    def render(branch_len, pr_len, dir_len=40):
+        parts = [truncate(dir_name, dir_len)]
         g = format_git(git, max_branch_len=branch_len)
         if g:
             parts.append(g)
@@ -450,14 +471,19 @@ def main():
         parts.append(model_text)
         return " | ".join(parts)
 
-    # Adaptive truncation: iteratively shrink branch and PR title to fit.
-    branch_budget = 60
-    pr_title_budget = 80
-    statusline = render(branch_budget, pr_title_budget)
-    while visible_len(statusline) > term_width and (branch_budget > 10 or pr_title_budget > 12):
-        branch_budget = max(10, branch_budget - 4)
-        pr_title_budget = max(12, pr_title_budget - 4)
-        statusline = render(branch_budget, pr_title_budget)
+    # Adaptive truncation: shrink the PR title first, then the branch
+    # (abbreviated path segments, then a shorter name), finally drop the
+    # PR title entirely and shorten the directory name. Take the first
+    # variant that fits.
+    candidates = (
+        [(60, pr) for pr in range(40, 19, -4)]
+        + [(br, 20) for br in range(56, 15, -4)]
+        + [(16, 0), (12, 0), (12, 0, 16), (12, 0, 10)]
+    )
+    for budgets in candidates:
+        statusline = render(*budgets)
+        if visible_len(statusline) <= term_width:
+            break
 
     print(statusline)
 
