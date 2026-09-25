@@ -25,24 +25,21 @@
 ## ✨ Features
 
 ### Core Features
-1. **Real Token Usage Tracking**
-   - Analyzes actual token consumption from `~/.claude/projects/*.jsonl`
-   - Shows used/limit: `🔋843.4k/4.2M`
-   - Progress bars with color coding
+1. **Real Rate-Limit Usage**
+   - Reads `rate_limits` from Claude Code's stdin JSON (Pro/Max subscriptions)
+   - 5-hour and 7-day windows in one double-row bar (top/bottom half): `🔋███▄    `
+   - Exact values, same as `/usage` — no estimation
 
-2. **Smart P90 Limits**
-   - Automatically calculates personalized limits
-   - Uses 90th percentile from last 8 days
-   - Adapts to your usage patterns
+2. **Reset Countdowns**
+   - From each window's `resets_at`
+   - Format: `3h12m` below a day, `3d04h` above
 
-3. **Session Countdown Timer**
-   - Shows time until 5-hour session reset
-   - Format: `⏱️ 0h46m`
-   - Calculated from session start time
+3. **Cached PR Lookup**
+   - `gh pr view` result cached 60s per repo+branch
 
 4. **Progress Bars** (8 chars wide)
    - Context usage: `🧠███░░░░░`
-   - Token usage: `🔋...k/...M ███░░░░░`
+   - Rate limits: `🔋███▄    ` (top = 5h, bottom = 7d)
    - Color coding: Green (<80%) → Orange (80-89%) → Red (≥90%)
 
 5. **Colored File Status Badges**
@@ -116,22 +113,22 @@ claude-statusline/
 
 Normal usage:
 ```
-origin/main A3 M1 +45 -12 | 🧠███░░░░░ | 🔋843.4k/4.2M █░░░░░░░ | ⏱️ 0h46m | 🤖 Sonnet 4.5
+origin/main A3 M1 +45 -12 | 🧠███░░░░░ | 🔋██▄      3h12m | 🤖 Sonnet 4.5
 ```
 
 With PR:
 ```
-origin/feature M2 | PR#123: Add auth | 🧠█████░░░ | 🔋1.2M/4.2M ███░░░░░ | ⏱️ 2h15m | 🤖 Opus
+origin/feature M2 | PR#123: Add auth | 🧠█████░░░ | 🔋████▄    2h15m | 🤖 Opus
 ```
 
 Warning (orange at 80%+):
 ```
-🧠██████░░ | 🔋3.5M/4.2M ██████░░ | ⏱️ 1h30m | 🤖 Sonnet
+🧠██████░░ | 🔋██████▀  1h30m | 🤖 Sonnet
 ```
 
 Critical (red at 90%+):
 ```
-🧠███████░ | 🔋3.9M/4.2M ███████░ | ⏱️ 0h22m | 🤖 Sonnet
+🧠███████░ | 🔋███████  0h22m 5h 93% 7d 90% 0d09h | 🤖 Sonnet
 ```
 
 ## 🔗 Quick Links

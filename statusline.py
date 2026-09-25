@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 Custom statusline for Claude Code
-Shows: [git info] | [PR info] | [🧠 context] | [🔋 tokens] | [⏱️ timer] | [🤖 model]
+Shows: [dir] | [git info] | [PR info] | [🧠 context] | [🔋 5h/7d limits] | [🤖 model]
 
 Features:
-- Real token usage tracking from .jsonl files
-- Adaptive P90 limits from usage history
-- 5-hour session countdown timer
+- Real subscription rate-limit usage (5h + 7d) from Claude Code's stdin JSON
+- Reset countdowns for both windows
 - Colored progress bars and git status badges
+- Cached PR lookup via `gh`
 
 Repository: https://github.com/haraldschilly/claude-statusline
 Inspired by: https://github.com/leeguooooo/claude-code-usage-bar
@@ -19,11 +19,14 @@ import shutil
 import subprocess
 import sys
 import os
-from datetime import datetime, timedelta, timezone
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+
+# How long a cached `gh pr view` result stays valid (seconds).
+PR_CACHE_TTL = 60
 
 
 def visible_len(s: str) -> int:
@@ -57,71 +60,87 @@ def truncate(s: str, max_len: int) -> str:
     return s[:max(1, max_len - 1)] + '…'
 
 
-def run_cmd(cmd, cwd=None, check=False):
-    """Run a shell command and return output, or None on error."""
+def run_cmd(args: List[str], cwd=None, timeout=2) -> Optional[str]:
+    """Run a command (argument list, no shell) and return stdout, or None on failure."""
     try:
         result = subprocess.run(
-            cmd,
-            shell=True,
+            args,
             capture_output=True,
             text=True,
             cwd=cwd,
-            timeout=2
+            timeout=timeout,
         )
-        if check and result.returncode != 0:
-            return None
-        return result.stdout.strip()
-    except (subprocess.TimeoutExpired, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def collect_git_data(cwd) -> Optional[Dict[str, Any]]:
+    """Gather git repository state once per render.
+
+    Uses `git status --porcelain=v2 --branch`, which reports branch, upstream
+    and file states in a single call.
+    """
+    toplevel = run_cmd(["git", "rev-parse", "--show-toplevel"], cwd=cwd)
+    if not toplevel:
         return None
 
-
-def get_git_info(cwd, max_branch_len=60):
-    """Get git repository information."""
-    # Check if we're in a git repo
-    if not run_cmd("git rev-parse --git-dir", cwd=cwd):
+    status_output = run_cmd(["git", "status", "--porcelain=v2", "--branch"], cwd=cwd)
+    if status_output is None:
         return None
 
-    # Get current branch (raw name, used to look up tracking remote)
-    branch_raw = run_cmd("git branch --show-current", cwd=cwd)
-    if not branch_raw:
-        # Detached HEAD state
-        branch_raw = run_cmd("git rev-parse --short HEAD", cwd=cwd) or "detached"
+    branch = upstream = oid = None
+    modified = added = deleted = 0
+    for line in status_output.split('\n'):
+        if not line:
+            continue
+        if line.startswith('# branch.head '):
+            branch = line[len('# branch.head '):]
+        elif line.startswith('# branch.upstream '):
+            upstream = line[len('# branch.upstream '):]
+        elif line.startswith('# branch.oid '):
+            oid = line[len('# branch.oid '):]
+        elif line.startswith('? '):
+            # Untracked files are new files, just not staged yet
+            added += 1
+        elif line[:2] in ('1 ', '2 ', 'u '):
+            xy = line[2:4]
+            if 'M' in xy or line[0] in ('2', 'u'):  # renamed/copied or unmerged
+                modified += 1
+            if 'A' in xy:
+                added += 1
+            if 'D' in xy:
+                deleted += 1
 
-    # Get the remote that the current branch is tracking (use untruncated name)
-    remote = run_cmd(f"git config branch.{branch_raw}.remote", cwd=cwd) if branch_raw else None
+    detached = branch in (None, '(detached)')
+    if detached:
+        branch = oid[:7] if oid and oid != '(initial)' else 'detached'
+
+    # Remote tracked by the current branch
+    remote = None
+    if not detached:
+        remote = run_cmd(["git", "config", f"branch.{branch}.remote"], cwd=cwd)
+    if not remote and upstream:
+        remote = upstream.split('/', 1)[0]
     if not remote:
         # Fallback: use 'origin' if it exists, else first remote, else 'local'
-        remotes = run_cmd("git remote", cwd=cwd)
+        remotes = run_cmd(["git", "remote"], cwd=cwd)
         if remotes:
             remote_list = remotes.split('\n')
             remote = "origin" if "origin" in remote_list else remote_list[0]
         else:
             remote = "local"
 
-    # Get status information
-    status_output = run_cmd("git status --porcelain", cwd=cwd) or ""
-
-    # Count M/D/A files
-    modified = added = deleted = 0
-    for line in status_output.split('\n'):
-        if not line:
-            continue
-        status = line[:2]
-        if 'M' in status:
-            modified += 1
-        if 'A' in status:
-            added += 1
-        if 'D' in status:
-            deleted += 1
-
-    # Get line changes (staged + unstaged)
-    diff_stats = run_cmd("git diff --numstat HEAD 2>/dev/null || git diff --numstat --cached", cwd=cwd)
+    # Line changes (staged + unstaged); --cached covers repos without a HEAD yet
+    diff_stats = run_cmd(["git", "diff", "--numstat", "HEAD"], cwd=cwd)
+    if diff_stats is None:
+        diff_stats = run_cmd(["git", "diff", "--numstat", "--cached"], cwd=cwd)
 
     total_added = total_removed = 0
     if diff_stats:
         for line in diff_stats.split('\n'):
-            if not line:
-                continue
             parts = line.split('\t')
             if len(parts) >= 2:
                 try:
@@ -130,60 +149,107 @@ def get_git_info(cwd, max_branch_len=60):
                 except ValueError:
                     pass
 
-    # Build status string with colored badges
+    return {
+        'toplevel': toplevel,
+        'branch': branch,
+        'detached': detached,
+        'remote': remote,
+        'added': added,
+        'modified': modified,
+        'deleted': deleted,
+        'lines_added': total_added,
+        'lines_removed': total_removed,
+    }
+
+
+def format_git(git: Optional[Dict[str, Any]], max_branch_len=60) -> Optional[str]:
+    """Format collected git data into the display string."""
+    if not git:
+        return None
+
     # ANSI color codes for backgrounds with bold white text
     GREEN_BG = '\033[42m\033[1;97m'  # Green background, bold white text
     ORANGE_BG = '\033[48;5;208m\033[1;97m'  # Orange background, bold white text
     RED_BG = '\033[41m\033[1;97m'  # Red background, bold white text
+    BOLD_GREEN = '\033[1;32m'
+    BOLD_RED = '\033[1;31m'
     RESET = '\033[0m'
 
-    status_parts = []
-    if added:
-        status_parts.append(f"{GREEN_BG}A{added}{RESET}")
-    if modified:
-        status_parts.append(f"{ORANGE_BG}M{modified}{RESET}")
-    if deleted:
-        status_parts.append(f"{RED_BG}D{deleted}{RESET}")
+    parts = [f"{git['remote']}/{truncate(git['branch'], max_branch_len)}"]
 
-    status_str = " ".join(status_parts) if status_parts else ""
-
-    # Add line changes with bold colors
-    BOLD_GREEN = '\033[1;32m'  # Bold green
-    BOLD_RED = '\033[1;31m'  # Bold red
-    RESET_LINE = '\033[0m'
+    badges = []
+    if git['added']:
+        badges.append(f"{GREEN_BG}A{git['added']}{RESET}")
+    if git['modified']:
+        badges.append(f"{ORANGE_BG}M{git['modified']}{RESET}")
+    if git['deleted']:
+        badges.append(f"{RED_BG}D{git['deleted']}{RESET}")
+    if badges:
+        parts.append(" ".join(badges))
 
     changes = []
-    if total_added:
-        changes.append(f"{BOLD_GREEN}+{total_added}{RESET_LINE}")
-    if total_removed:
-        changes.append(f"{BOLD_RED}-{total_removed}{RESET_LINE}")
-    changes_str = " ".join(changes)
-
-    # Truncate branch name only for display (not for git lookups above)
-    branch = truncate(branch_raw, max_branch_len)
-
-    # Combine everything
-    parts = [f"{remote}/{branch}"]
-    if status_str:
-        parts.append(status_str)
-    if changes_str:
-        parts.append(changes_str)
+    if git['lines_added']:
+        changes.append(f"{BOLD_GREEN}+{git['lines_added']}{RESET}")
+    if git['lines_removed']:
+        changes.append(f"{BOLD_RED}-{git['lines_removed']}{RESET}")
+    if changes:
+        parts.append(" ".join(changes))
 
     return " ".join(parts)
 
 
-def fetch_pr_data(cwd):
-    """Fetch raw PR data once (number and title). Returns (number, title) or None."""
-    if not run_cmd("command -v gh"):
+def pr_cache_path() -> Path:
+    base = os.environ.get('XDG_CACHE_HOME') or str(Path.home() / '.cache')
+    return Path(base) / 'claude-statusline' / 'pr-cache.json'
+
+
+def fetch_pr_data(git: Optional[Dict[str, Any]]):
+    """Return (number, title) of the current branch's PR, or None.
+
+    `gh pr view` is a network call, so results (including "no PR") are cached
+    per repo+branch for PR_CACHE_TTL seconds.
+    """
+    if not git or git['detached']:
         return None
-    pr_info = run_cmd("gh pr view --json number,title 2>/dev/null", cwd=cwd)
-    if not pr_info:
-        return None
+
+    key = f"{git['toplevel']}\0{git['branch']}"
+    cache_file = pr_cache_path()
     try:
-        pr_data = json.loads(pr_info)
-        return pr_data.get('number'), pr_data.get('title', '')
-    except (json.JSONDecodeError, KeyError):
-        return None
+        cache = json.loads(cache_file.read_text())
+        if not isinstance(cache, dict):
+            cache = {}
+    except (OSError, ValueError):
+        cache = {}
+
+    now = time.time()
+    entry = cache.get(key)
+    if isinstance(entry, dict) and now - entry.get('ts', 0) < PR_CACHE_TTL:
+        pr = entry.get('pr')
+        return tuple(pr) if pr else None
+
+    pr = None
+    if shutil.which('gh'):
+        pr_info = run_cmd(["gh", "pr", "view", "--json", "number,title"], cwd=git['toplevel'])
+        if pr_info:
+            try:
+                pr_data = json.loads(pr_info)
+                pr = (pr_data.get('number'), pr_data.get('title', ''))
+            except (json.JSONDecodeError, AttributeError):
+                pr = None
+
+    # Store result, dropping expired entries; write atomically (parallel sessions)
+    cache = {k: v for k, v in cache.items()
+             if isinstance(v, dict) and now - v.get('ts', 0) < PR_CACHE_TTL}
+    cache[key] = {'ts': now, 'pr': list(pr) if pr else None}
+    try:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cache_file.with_suffix(f'.{os.getpid()}.tmp')
+        tmp.write_text(json.dumps(cache))
+        os.replace(tmp, cache_file)
+    except OSError:
+        pass
+
+    return pr
 
 
 def format_pr(pr_data, max_title_len=40):
@@ -192,6 +258,15 @@ def format_pr(pr_data, max_title_len=40):
         return None
     number, title = pr_data
     return f"PR#{number}: {truncate(title, max_title_len)}"
+
+
+def bar_color(percentage):
+    """ANSI color for a usage level: green <80%, orange 80-89%, red >=90%."""
+    if percentage >= 90:
+        return '\033[91m'
+    if percentage >= 80:
+        return '\033[38;5;208m'
+    return '\033[32m'
 
 
 def progress_bar(percentage, width=8):
@@ -205,19 +280,8 @@ def progress_bar(percentage, width=8):
     Returns:
         Colored ASCII progress bar string
     """
-    # ANSI color codes
     RESET = '\033[0m'
-    GREEN = '\033[32m'
-    ORANGE = '\033[38;5;208m'
-    RED = '\033[91m'
-
-    # Choose color based on percentage
-    if percentage >= 90:
-        color = RED
-    elif percentage >= 80:
-        color = ORANGE
-    else:
-        color = GREEN
+    color = bar_color(percentage)
 
     # Calculate filled and empty portions.
     # Clamp to [0, width] so a percentage >100% (over budget) renders a full
@@ -231,201 +295,101 @@ def progress_bar(percentage, width=8):
     return f"{color}{bar}{RESET}"
 
 
-def get_claude_data_path() -> Optional[Path]:
-    """Find Claude data directory."""
-    # Check env override
-    env_dir = os.environ.get("CLAUDE_CONFIG_DIR")
-    if env_dir:
-        env_path = Path(env_dir).expanduser()
-        # The config dir may be named anything (e.g. ~/.claude-work), so first
-        # treat it as the config dir itself, then as a parent of one.
-        if (env_path / "projects").exists():
-            return env_path / "projects"
-        if (env_path / ".claude" / "projects").exists():
-            return env_path / ".claude" / "projects"
-        if env_path.exists():
-            return env_path
-        return env_path / ".claude"
-
-    # Check standard locations
-    candidates = [
-        Path.home() / '.claude' / 'projects',
-        Path.home() / '.config' / 'claude' / 'projects',
-        Path.home() / '.claude',
-    ]
-
-    for path in candidates:
-        if path.exists() and path.is_dir():
-            return path
-
-    return None
+def format_duration(seconds: float) -> str:
+    """Format a countdown: 1h05m below a day, 3d04h above."""
+    total_minutes = max(0, int(seconds // 60))
+    hours, mins = divmod(total_minutes, 60)
+    if hours >= 24:
+        days, hours = divmod(hours, 24)
+        return f"{days}d{hours:02d}h"
+    return f"{hours}h{mins:02d}m"
 
 
-def analyze_usage_data() -> Optional[Dict[str, Any]]:
-    """Analyze Claude usage data from .jsonl files.
+def active_window(window: Any):
+    """Return (used_percentage, seconds_until_reset) of a rate-limit window.
 
-    A "session" starts at the first message and lasts 5 hours from that
-    timestamp. The next message ≥5h after the session start begins a new
-    session. Entries are gathered from all jsonl files, sorted by timestamp,
-    and grouped accordingly.
+    None if the window is absent or has already reset.
     """
-    try:
-        data_path = get_claude_data_path()
-        if not data_path:
-            return None
+    if not isinstance(window, dict) or window.get('used_percentage') is None:
+        return None
+    pct = window['used_percentage']
+    resets_at = window.get('resets_at')
+    remaining = resets_at - time.time() if resets_at is not None else None
+    if remaining is not None and remaining <= 0:
+        return None
+    return pct, remaining
 
-        now_utc = datetime.now(timezone.utc)
-        history_cutoff = now_utc - timedelta(days=8)
 
-        # Collect every usage entry (timestamp, tokens, cost) from the last 8 days.
-        entries = []
-        for jsonl_file in data_path.rglob("*.jsonl"):
-            try:
-                with open(jsonl_file, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            data = json.loads(line)
+def format_rate_limits(rate_limits: Dict[str, Any], width=8) -> Optional[str]:
+    """Render the 5h and 7d rate limits as one double-row bar.
 
-                            timestamp_str = data.get('timestamp', '')
-                            if not timestamp_str:
-                                continue
-                            if timestamp_str.endswith('Z'):
-                                timestamp_str = timestamp_str[:-1] + '+00:00'
-                            timestamp = datetime.fromisoformat(timestamp_str)
-
-                            if timestamp < history_cutoff:
-                                continue
-
-                            usage = data.get('usage', {})
-                            if not usage and 'message' in data and isinstance(data['message'], dict):
-                                usage = data['message'].get('usage', {})
-                            if not usage:
-                                continue
-
-                            input_tokens = usage.get('input_tokens', 0)
-                            output_tokens = usage.get('output_tokens', 0)
-                            cache_creation = usage.get('cache_creation_input_tokens', 0)
-                            total = input_tokens + output_tokens + cache_creation
-                            if total == 0:
-                                continue
-
-                            # Estimate cost (Sonnet 3.5 pricing: input $3/M, output $15/M)
-                            cost = (input_tokens * 3 + output_tokens * 15 + cache_creation * 3.75) / 1000000
-
-                            entries.append((timestamp, total, cost))
-                        except (json.JSONDecodeError, ValueError, TypeError):
-                            continue
-            except Exception:
-                continue
-
-        if not entries:
-            return None
-
-        entries.sort(key=lambda e: e[0])
-
-        # Group into sessions: session_start + 5h defines the session window.
-        # The next entry ≥5h after session_start begins a new session.
-        sessions = []
-        cur_start = None
-        cur_tokens = 0
-        cur_cost = 0.0
-        for ts, tokens, cost in entries:
-            if cur_start is None or (ts - cur_start).total_seconds() >= 5 * 3600:
-                if cur_start is not None:
-                    sessions.append({'start': cur_start, 'tokens': cur_tokens, 'cost': cur_cost})
-                cur_start = ts
-                cur_tokens = 0
-                cur_cost = 0.0
-            cur_tokens += tokens
-            cur_cost += cost
-        if cur_start is not None:
-            sessions.append({'start': cur_start, 'tokens': cur_tokens, 'cost': cur_cost})
-
-        # Determine the active session: the most recent one, only if still
-        # within its 5h window from now.
-        active = sessions[-1] if sessions else None
-        if not active or (now_utc - active['start']).total_seconds() >= 5 * 3600:
-            return None
-
-        total_tokens = active['tokens']
-        total_cost = active['cost']
-        session_start = active['start']
-
-        # Historical sessions (excluding the active one) feed P90 limits.
-        historical = sessions[:-1] if len(sessions) > 1 else []
-
-        if len(historical) >= 5:
-            session_tokens = sorted(s['tokens'] for s in historical)
-            session_costs = sorted(s['cost'] for s in historical)
-            p90_index = int(len(session_tokens) * 0.9)
-            token_limit = max(session_tokens[min(p90_index, len(session_tokens) - 1)], 19000)
-            cost_limit = max(session_costs[min(p90_index, len(session_costs) - 1)] * 1.2, 18.0)
-        else:
-            # Cold start: fewer than 5 historical sessions to learn from.
-            # A session sums input+output+cache_creation across a 5h window;
-            # with prompt caching that routinely reaches 1M+ tokens, so the old
-            # fixed limits (19k/88k/220k) pegged the bar permanently red. Use
-            # realistic budgets; once ≥5 sessions of history exist the adaptive
-            # P90 limit above takes over automatically.
-            if total_tokens > 1_000_000:
-                token_limit, cost_limit = 3_000_000, 200.0
-            elif total_tokens > 250_000:
-                token_limit, cost_limit = 1_500_000, 100.0
-            else:
-                token_limit, cost_limit = 500_000, 40.0
-
-        return {
-            'total_tokens': total_tokens,
-            'token_limit': int(token_limit),
-            'cost_usd': total_cost,
-            'cost_limit': cost_limit,
-            'session_start': session_start,
-        }
-
-    except Exception:
+    Top half = 5h window, bottom half = 7d window: '█' where both are
+    filled, then '▀' or '▄' for whichever window reaches further, then blanks.
+    The whole bar has one color, taken from the higher of the two values.
+    Percentages are only spelled out (in red) from 90% on; the 5h reset
+    countdown is always shown.
+    """
+    five = active_window(rate_limits.get('five_hour'))
+    week = active_window(rate_limits.get('seven_day'))
+    if not five and not week:
         return None
 
+    RED, RESET = '\033[91m', '\033[0m'
 
-def calculate_reset_time(session_start: Optional[datetime] = None) -> str:
-    """Calculate time until session reset (5-hour rolling window)."""
-    try:
-        if session_start:
-            session_end = session_start + timedelta(hours=5)
-            now = datetime.now(timezone.utc)
+    def filled(win):
+        if not win:
+            return 0
+        return max(0, min(width, round(win[0] / 100 * width)))
 
-            if session_end > now:
-                diff = session_end - now
-                total_minutes = int(diff.total_seconds() / 60)
-                hours = total_minutes // 60
-                mins = total_minutes % 60
-                return f"{hours}h{mins:02d}m"
+    top_n, bot_n = filled(five), filled(week)
+    cells = ''.join(
+        '█' if i < top_n and i < bot_n else
+        '▀' if i < top_n else
+        '▄' if i < bot_n else
+        ' '
+        for i in range(width)
+    )
+    peak = max(win[0] for win in (five, week) if win)
+    bar = f"{bar_color(peak)}{cells}{RESET}"
 
-        # Fallback: estimate next reset
-        now = datetime.now()
-        today_2pm = now.replace(hour=14, minute=0, second=0, microsecond=0)
-        next_reset = today_2pm if now < today_2pm else today_2pm + timedelta(days=1)
-        diff = next_reset - now
-
-        total_minutes = int(diff.total_seconds() / 60)
-        hours = total_minutes // 60
-        mins = total_minutes % 60
-
-        return f"{hours}h{mins:02d}m"
-    except Exception:
-        return "N/A"
+    text = f"🔋{bar}"
+    if five and five[1] is not None:
+        text += f" {format_duration(five[1])}"
+    if five and five[0] >= 90:
+        text += f" {RED}5h {five[0]:.0f}%{RESET}"
+    if week and week[0] >= 90:
+        text += f" {RED}7d {week[0]:.0f}%"
+        if week[1] is not None:
+            text += f" {format_duration(week[1])}"
+        text += RESET
+    return text
 
 
-def format_number(num: float) -> str:
-    """Format number for display (e.g., 48000 -> 48.0k)."""
-    if num >= 1000000:
-        return f"{num/1000000:.1f}M"
-    elif num >= 1000:
-        return f"{num/1000:.1f}k"
-    else:
-        return f"{num:.0f}"
+def get_effort_level(data: Dict[str, Any]) -> Optional[str]:
+    """Current effort level: stdin JSON, then env var, then settings file."""
+    effort = (data.get('effort') or {}).get('level')
+    if effort:
+        return effort
+    effort = os.environ.get("CLAUDE_CODE_EFFORT_LEVEL")
+    if effort:
+        return effort
+    settings_candidates = []
+    env_cfg = os.environ.get("CLAUDE_CONFIG_DIR")
+    if env_cfg:
+        settings_candidates.append(Path(env_cfg).expanduser() / 'settings.json')
+    settings_candidates += [
+        Path.home() / '.claude' / 'settings.json',
+        Path.home() / '.config' / 'claude' / 'settings.json',
+    ]
+    for settings_path in settings_candidates:
+        try:
+            with open(settings_path) as f:
+                effort = json.load(f).get('effortLevel')
+            if effort:
+                return effort
+        except Exception:
+            pass
+    return None
 
 
 def main():
@@ -438,11 +402,12 @@ def main():
         return
 
     # Extract information from JSON
-    cwd = data.get('workspace', {}).get('current_dir', str(Path.cwd()))
-    model_name = data.get('model', {}).get('display_name', 'Unknown')
+    cwd = (data.get('workspace') or {}).get('current_dir') or str(Path.cwd())
+    model_name = (data.get('model') or {}).get('display_name', 'Unknown')
     # Shorten verbose context suffix like "(1M context)" to "[1M]"
     model_name = re.sub(r'\s*\(([0-9]+[kKmM])\s+context\)', r' [\1]', model_name)
-    context_used = data.get('context_window', {}).get('used_percentage', 0)
+    # used_percentage may be null early in a session
+    context_used = (data.get('context_window') or {}).get('used_percentage') or 0
 
     # Terminal width for adaptive truncation (fallback 120)
     try:
@@ -450,102 +415,45 @@ def main():
     except Exception:
         term_width = 120
 
-    # Generous initial budgets; actual truncation happens after measuring below.
-    branch_budget = 60
-    pr_title_budget = 80
+    # Gather everything once; the truncation loop below only re-formats.
+    git = collect_git_data(cwd)
+    dir_name = Path(git['toplevel']).name if git else Path(cwd).name
+    pr_data = fetch_pr_data(git)
 
-    # Build statusline components
-    components = []
+    ctx_text = f"🧠 {progress_bar(context_used, width=8)}"
 
-    # Directory name (git root basename, or cwd basename as fallback)
-    git_toplevel = run_cmd("git rev-parse --show-toplevel", cwd=cwd)
-    dir_name = Path(git_toplevel).name if git_toplevel else Path(cwd).name
-    components.append(dir_name)
+    # Subscription rate limits (Pro/Max only, present after the first API response)
+    rate_limits = data.get('rate_limits') or {}
+    limits_text = format_rate_limits(rate_limits)
 
-    # Git information
-    git_info = get_git_info(cwd, max_branch_len=branch_budget)
-    if git_info:
-        components.append(git_info)
-
-    # PR information (fetch once, reformat as needed)
-    pr_data = fetch_pr_data(cwd)
-    pr_info = format_pr(pr_data, max_title_len=pr_title_budget)
-    if pr_info:
-        components.append(pr_info)
-
-    # Context usage with progress bar
-    ctx_bar = progress_bar(context_used, width=8)
-    components.append(f"🧠 {ctx_bar}")
-
-    # Analyze usage data from Claude files
-    usage_data = analyze_usage_data()
-
-    if usage_data:
-        # Token usage with progress bar
-        token_pct = (usage_data['total_tokens'] / usage_data['token_limit']) * 100 if usage_data['token_limit'] > 0 else 0
-        token_bar = progress_bar(token_pct, width=8)
-        tokens_text = f"🔋{format_number(usage_data['total_tokens'])}/{format_number(usage_data['token_limit'])} {token_bar}"
-
-        # # Cost with progress bar
-        # cost_pct = (usage_data['cost_usd'] / usage_data['cost_limit']) * 100 if usage_data['cost_limit'] > 0 else 0
-        # cost_bar = progress_bar(cost_pct, width=8)
-        # cost_text = f"💰${usage_data['cost_usd']:.2f}/${usage_data['cost_limit']:.2f} {cost_bar}"
-
-        # Reset countdown timer
-        reset_time = calculate_reset_time(usage_data.get('session_start'))
-        time_text = f"⏱️ {reset_time}"
-
-        components.extend([tokens_text, time_text])
-
-    # Effort level (env var overrides settings file)
-    effort = os.environ.get("CLAUDE_CODE_EFFORT_LEVEL")
-    if not effort:
-        settings_candidates = []
-        env_cfg = os.environ.get("CLAUDE_CONFIG_DIR")
-        if env_cfg:
-            settings_candidates.append(Path(env_cfg).expanduser() / 'settings.json')
-        settings_candidates += [
-            Path.home() / '.claude' / 'settings.json',
-            Path.home() / '.config' / 'claude' / 'settings.json',
-        ]
-        for settings_path in settings_candidates:
-            if settings_path.exists():
-                try:
-                    with open(settings_path) as f:
-                        effort = json.load(f).get('effortLevel')
-                    if effort:
-                        break
-                except Exception:
-                    pass
     effort_icons = {
         'low': '▁',
         'medium': '▃',
         'high': '▅',
         'xhigh': '▇',
     }
-    effort_name = effort or 'medium'
+    effort_name = get_effort_level(data) or 'medium'
     effort_icon = effort_icons.get(effort_name, '❔')
-    effort_text = f"{effort_icon} {effort_name}"
+    model_text = f"🤖 {model_name} {effort_icon} {effort_name}"
 
-    # Model name and effort at the end
-    components.append(f"🤖 {model_name} {effort_text}")
-
-    # Adaptive truncation: iteratively shrink branch and PR title to fit.
     def render(branch_len, pr_len):
         parts = [dir_name]
-        g = get_git_info(cwd, max_branch_len=branch_len)
+        g = format_git(git, max_branch_len=branch_len)
         if g:
             parts.append(g)
         p = format_pr(pr_data, max_title_len=pr_len)
         if p:
             parts.append(p)
-        parts.append(f"🧠 {ctx_bar}")
-        if usage_data:
-            parts.extend([tokens_text, time_text])
-        parts.append(f"🤖 {model_name} {effort_text}")
+        parts.append(ctx_text)
+        if limits_text:
+            parts.append(limits_text)
+        parts.append(model_text)
         return " | ".join(parts)
 
-    statusline = " | ".join(components)
+    # Adaptive truncation: iteratively shrink branch and PR title to fit.
+    branch_budget = 60
+    pr_title_budget = 80
+    statusline = render(branch_budget, pr_title_budget)
     while visible_len(statusline) > term_width and (branch_budget > 10 or pr_title_budget > 12):
         branch_budget = max(10, branch_budget - 4)
         pr_title_budget = max(12, pr_title_budget - 4)

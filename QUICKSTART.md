@@ -29,10 +29,10 @@ ln -sf ~/p/claude-statusline/statusline.py ~/.claude/statusline.py
 
 ### Core Features
 
-**Real Token Tracking**
-- 🔋 Token usage with limits: `🔋843.4k/4.2M █░░░░░░░`
-- ⏱️ Session countdown: `⏱️ 0h46m` until reset
-- 📊 Smart P90 limits (adapts to your usage)
+**Real Rate-Limit Usage** (Pro/Max subscriptions)
+- 🔋 One double-row bar: top half = 5-hour window, bottom half = weekly window, plus the 5h reset countdown: `🔋███▄     3h12m`
+- Percentages appear only from 90% on, in red
+- Exact numbers from Claude Code (same as `/usage`), no estimation
 
 **Progress Bars** (8 chars wide)
 - 🟢 Green: <80% (normal)
@@ -51,36 +51,25 @@ ln -sf ~/p/claude-statusline/statusline.py ~/.claude/statusline.py
 ### Example Output
 
 ```
-origin/main A3 M1 D2 +45 -12 | 🧠███░░░░░ | 🔋843.4k/4.2M █░░░░░░░ | ⏱️ 0h46m | 🤖 Sonnet 4.5
+my-project | origin/main A3 M1 D2 +45 -12 | 🧠 ███░░░░░ | 🔋██▄      3h12m | 🤖 Sonnet 4.5 ▃ medium
 ```
 
 ## Customization
 
-### Usage Limits (Automatic)
-Limits are **automatically calculated** from your usage history (P90 method):
-- Analyzes last 8 days of sessions
-- Uses 90th percentile as threshold
-- Falls back to sensible defaults (19k-220k tokens)
-
 ### Change Progress Bar Width
-In `main()` function, find `width=8`:
+Pass a different `width`:
 ```python
-token_bar = progress_bar(token_pct, width=10)  # Change 8 to 10
+limits_text = format_rate_limits(rate_limits, width=10)  # in main()
 ```
 
 ### Change Color Thresholds
-In `progress_bar()` function:
+In `bar_color()` (shared by all bars):
 ```python
-if percentage >= 90:  # Red at 90%
-    color = RED
-elif percentage >= 80:  # Orange at 80%
-    color = ORANGE
-```
-
-### Adjust Session Window
-In `analyze_usage_data()` function:
-```python
-cutoff_time = datetime.now(timezone.utc) - timedelta(hours=3)  # Change from 5
+if percentage >= 90:      # Red threshold (default: 90%)
+    return RED
+if percentage >= 80:      # Orange threshold (default: 80%)
+    return ORANGE
+return GREEN
 ```
 
 ## Testing
